@@ -2014,6 +2014,60 @@ try {
     out(['ok' => true]);
   }
 
+  if ($method === 'POST' && $uriPath === '/app/clear-data') {
+    // Clear all campaign data and notes from database
+    $errors = [];
+    $deleted = [];
+
+    // Try to clear notes
+    try {
+      $result = $db->exec('DELETE FROM notes WHERE 1=1');
+      $deleted[] = "notes ({$result} rows)";
+    } catch (Throwable $e) {
+      $errors[] = 'notes: ' . $e->getMessage();
+    }
+
+    // Try to clear campaigns, adsets, ads
+    try {
+      $c1 = $db->exec('DELETE FROM campaigns WHERE 1=1');
+      $c2 = $db->exec('DELETE FROM adsets WHERE 1=1');
+      $c3 = $db->exec('DELETE FROM ads WHERE 1=1');
+      $deleted[] = "campaigns ({$c1}), adsets ({$c2}), ads ({$c3}) rows";
+    } catch (Throwable $e) {
+      $errors[] = 'campaign tables: ' . $e->getMessage();
+    }
+
+    // Verify deletion
+    $campaignCount = 0;
+    $adsetCount = 0;
+    $adCount = 0;
+    try {
+      $campaignCount = (int)$db->query('SELECT COUNT(*) FROM campaigns')->fetchColumn();
+      $adsetCount = (int)$db->query('SELECT COUNT(*) FROM adsets')->fetchColumn();
+      $adCount = (int)$db->query('SELECT COUNT(*) FROM ads')->fetchColumn();
+    } catch (Throwable $e) {
+      // Ignore verification error
+    }
+
+    $verified = ($campaignCount === 0 && $adsetCount === 0 && $adCount === 0);
+
+    if (count($errors) > 0) {
+      fail(
+        'Gagal clear beberapa data: ' . implode('; ', $errors) . '. Hubungi admin.',
+        400,
+        ['cleared' => $deleted, 'remaining' => ['campaigns' => $campaignCount, 'adsets' => $adsetCount, 'ads' => $adCount]]
+      );
+    }
+
+    out([
+      'ok' => true,
+      'message' => 'Data berhasil direset.',
+      'deleted' => $deleted,
+      'verified' => $verified,
+      'remaining' => ['campaigns' => $campaignCount, 'adsets' => $adsetCount, 'ads' => $adCount],
+    ]);
+  }
+
   if ($method === 'POST' && $uriPath === '/app/ai') {
     fail('AI endpoint belum diaktifkan di mode MySQL PHP', 501);
   }
