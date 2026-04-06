@@ -15,6 +15,29 @@ REPO_PATH="$1"
 DOCROOT_PATH="$2"
 BRANCH="${BRANCH:-main}"
 
+copy_if_needed() {
+	local src="$1"
+	local dst="$2"
+
+	if [[ ! -f "$src" ]]; then
+		echo "ERROR: source file not found: $src"
+		exit 1
+	fi
+
+	# If source and destination point to the same inode/path, skip safely.
+	if [[ -e "$dst" ]]; then
+		local src_real dst_real
+		src_real="$(readlink -f "$src")"
+		dst_real="$(readlink -f "$dst")"
+		if [[ "$src_real" == "$dst_real" ]]; then
+			echo "SKIP: $dst (same file)"
+			return 0
+		fi
+	fi
+
+	cp -f "$src" "$dst"
+}
+
 if [[ ! -d "$REPO_PATH/.git" ]]; then
 	echo "ERROR: repo path is not a git repository: $REPO_PATH"
 	exit 1
@@ -27,14 +50,14 @@ git -C "$REPO_PATH" fetch origin "$BRANCH"
 git -C "$REPO_PATH" pull --ff-only origin "$BRANCH"
 
 echo "[2/4] Syncing frontend files"
-cp -f "$REPO_PATH/index.html" "$DOCROOT_PATH/index.html"
-cp -f "$REPO_PATH/app-main.js" "$DOCROOT_PATH/app-main.js"
-cp -f "$REPO_PATH/runtime-config.js" "$DOCROOT_PATH/runtime-config.js"
+copy_if_needed "$REPO_PATH/index.html" "$DOCROOT_PATH/index.html"
+copy_if_needed "$REPO_PATH/app-main.js" "$DOCROOT_PATH/app-main.js"
+copy_if_needed "$REPO_PATH/runtime-config.js" "$DOCROOT_PATH/runtime-config.js"
 
 echo "[3/4] Syncing cPanel PHP gateway files"
-cp -f "$REPO_PATH/cpanel-public/.htaccess" "$DOCROOT_PATH/.htaccess"
-cp -f "$REPO_PATH/cpanel-public/runtime-config.php" "$DOCROOT_PATH/runtime-config.php"
-cp -f "$REPO_PATH/cpanel-public/api/index.php" "$DOCROOT_PATH/api/index.php"
+copy_if_needed "$REPO_PATH/cpanel-public/.htaccess" "$DOCROOT_PATH/.htaccess"
+copy_if_needed "$REPO_PATH/cpanel-public/runtime-config.php" "$DOCROOT_PATH/runtime-config.php"
+copy_if_needed "$REPO_PATH/cpanel-public/api/index.php" "$DOCROOT_PATH/api/index.php"
 
 echo "[4/4] Deploy finished"
 echo "Docroot updated: $DOCROOT_PATH"
