@@ -10,6 +10,19 @@ $custom = getenv('MATIQ_ENV_PATH');
 if ($custom !== false && trim((string)$custom) !== '') {
   $candidates[] = trim((string)$custom);
 }
+$docRoot = (string)($_SERVER['DOCUMENT_ROOT'] ?? '');
+if ($docRoot !== '') {
+  $candidates[] = rtrim($docRoot, '/\\') . '/.env';
+}
+$cwd = getcwd();
+if (is_string($cwd) && $cwd !== '') {
+  $candidates[] = rtrim($cwd, '/\\') . '/.env';
+}
+$scriptFile = (string)($_SERVER['SCRIPT_FILENAME'] ?? '');
+if ($scriptFile !== '') {
+  $candidates[] = dirname($scriptFile) . '/.env';
+  $candidates[] = dirname($scriptFile, 2) . '/.env';
+}
 $candidates[] = dirname(__DIR__) . '/.env';
 $candidates[] = dirname(__DIR__, 2) . '/.env';
 $candidates[] = dirname(__DIR__) . '/../.env';
