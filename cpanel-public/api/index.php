@@ -1903,6 +1903,7 @@ try {
     }
 
     $payment = strtoupper(trim((string)($payload['payment_status'] ?? '')));
+      $role = strtolower(trim((string)($payload['role'] ?? '')));
     $activeProvided = array_key_exists('is_active', $payload);
 
     $set = [];
@@ -1911,6 +1912,10 @@ try {
       $set[] = 'payment_status = :payment_status';
       $params[':payment_status'] = $payment;
     }
+      if (in_array($role, ['admin', 'user'], true)) {
+        $set[] = 'role = :role';
+        $params[':role'] = $role;
+      }
     if ($activeProvided) {
       $set[] = 'is_active = :is_active';
       $params[':is_active'] = isTruthy($payload['is_active']) ? 1 : 0;

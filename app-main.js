@@ -1111,6 +1111,9 @@ function AdminUserPanel(props){
   var st9=useState(false),showCreate=st9[0],setShowCreate=st9[1];
   var st10=useState([]),notifLogs=st10[0],setNotifLogs=st10[1];
   var st11=useState(false),queueProcessing=st11[0],setQueueProcessing=st11[1];
+  var st12=useState(null),resetPasswordUser=st12[0],setResetPasswordUser=st12[1];
+  var st13=useState(new Set()),selectedUsers=st13[0],setSelectedUsers=st13[1];
+  var st14=useState(null),bulkActionStep=st14[0],setBulkActionStep=st14[1];
 
   useEffect(function(){
     var host=(location.hostname||"").toLowerCase();
@@ -1189,6 +1192,49 @@ function AdminUserPanel(props){
     authReq("/admin/user/delete",{user_id:userId})
       .then(function(res){
         if(res.ok){setMsg("User dihapus");loadUsers();loadStats();}
+          function resetPassword(userId,newPassword){
+            if(!adminApiReady){showAdminApiUnavailable();return;}
+            authReq("/admin/user/reset-password",{user_id:userId,new_password:newPassword})
+              .then(function(res){
+                if(res.ok){setMsg("Password berhasil direset");loadUsers();setResetPasswordUser(null);}
+                else setMsg(res.error||"Gagal reset password");
+                setTimeout(function(){setMsg("");},3000);
+              });
+          }
+
+          function toggleUserSelection(userId){
+            var newSet=new Set(selectedUsers);
+            if(newSet.has(userId)){newSet.delete(userId);}
+            else{newSet.add(userId);}
+            setSelectedUsers(newSet);
+          }
+
+          function toggleAllUsers(){
+            if(selectedUsers.size===users.length&&users.length>0){
+              setSelectedUsers(new Set());
+            }else{
+              var all=new Set();
+              users.forEach(function(u){all.add(u.id);});
+              setSelectedUsers(all);
+            }
+          }
+
+          function performBulkAction(action,updates){
+            if(selectedUsers.size===0){setMsg("Pilih user terlebih dahulu");setTimeout(function(){setMsg("");},2000);return;}
+            if(!adminApiReady){showAdminApiUnavailable();return;}
+            authReq("/admin/users/bulk-status",Object.assign({user_ids:Array.from(selectedUsers)},updates))
+              .then(function(res){
+                if(res.ok){
+                  setMsg("Bulk action berhasil: "+res.updated+" user diupdate");
+                  loadUsers();
+                  setSelectedUsers(new Set());
+                  setBulkActionStep(null);
+                }else{
+                  setMsg(res.error||"Bulk action gagal");
+                }
+                setTimeout(function(){setMsg("");},3000);
+              });
+          }
         else setMsg(res.error||"Gagal hapus");
         setTimeout(function(){setMsg("");},3000);
       });
@@ -1252,6 +1298,7 @@ function AdminUserPanel(props){
     ),
     
     // Filters
+              selectedUsers.size>0&&h("button",{className:"btnp",style:{marginLeft:8,background:"#ba7517",color:"#fff",border:"none"},onClick:function(){setBulkActionStep("select");}},"Bulk (",selectedUsers.size,")"),
     h("div",{className:"row",style:{marginBottom:12,flexWrap:"wrap"}},
       h("input",{type:"text",placeholder:"Cari email/nama...",value:search,onChange:function(e){setSearch(e.target.value);},style:{maxWidth:200}}),
       h("select",{value:roleFilter,onChange:function(e){setRoleFilter(e.target.value);},style:{maxWidth:120}},
@@ -1263,6 +1310,7 @@ function AdminUserPanel(props){
         h("option",{value:""},"Semua Status"),
         h("option",{value:"LUNAS"},"LUNAS"),
         h("option",{value:"PENDING"},"PENDING"),
+                    h("th",{style:{width:40}},h("input",{type:"checkbox",checked:selectedUsers.size>0&&selectedUsers.size===users.length&&users.length>0,onChange:toggleAllUsers,style:{width:14,height:14,cursor:"pointer"}})),
         h("option",{value:"NONE"},"NONE")
       ),
       h("button",{className:"btnp",onClick:loadUsers},"Filter"),
@@ -1274,6 +1322,7 @@ function AdminUserPanel(props){
     // User Table
     h("div",{className:"card",style:{padding:0,overflow:"auto"}},
       loading?h("div",{style:{padding:20,textAlign:"center",color:"#888"}},"Memuat..."):
+                      h("td",null,h("input",{type:"checkbox",checked:selectedUsers.has(u.id),onChange:function(){toggleUserSelection(u.id);},style:{width:14,height:14,cursor:"pointer"}})),
       h("table",null,
         h("thead",null,
           h("tr",null,
@@ -1282,6 +1331,7 @@ function AdminUserPanel(props){
             h("th",null,"Role"),
             h("th",null,"Status"),
             h("th",null,"Aktif"),
+                          h("button",{style:{padding:"3px 8px",fontSize:11,background:"#185fa5",color:"#fff",border:"none"},onClick:function(){setResetPasswordUser(u);}},"Reset PW"),
             h("th",null,"Aksi")
           )
         ),
@@ -1296,11 +1346,20 @@ function AdminUserPanel(props){
               h("td",null,
                 h("div",{className:"row",style:{gap:4}},
                   h("button",{style:{padding:"3px 8px",fontSize:11},onClick:function(){setEditUser(u);}},"Edit"),
+            // Reset Password Modal
+            resetPasswordUser&&h("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}},
+              h(ResetPasswordModal,{user:resetPasswordUser,onReset:function(password){resetPassword(resetPasswordUser.id,password);},onClose:function(){setResetPasswordUser(null);}})
+            ),
                   h("button",{style:{padding:"3px 8px",fontSize:11,color:"#991b1b"},onClick:function(){deleteUser(u.id);}},"Hapus")
                 )
               )
             );
           })
+    
+            // Bulk Action Modal
+            bulkActionStep&&h("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}},
+              h(BulkActionModal,{selectedCount:selectedUsers.size,onAction:performBulkAction,onClose:function(){setBulkActionStep(null);}})
+            )
         )
       )
     ),
@@ -1355,6 +1414,126 @@ function EditUserModal(props){
     ),
     h("div",{className:"row"},
       h("button",{className:"btnp",onClick:function(){onSave({name:name,role:role,payment_status:status,is_active:isActive?"true":"false"});}},"Simpan"),
+      h("button",{onClick:onClose},"Batal")
+    )
+  );
+}
+function ResetPasswordModal(props){
+  var user=props.user;
+  var onReset=props.onReset;
+  var onClose=props.onClose;
+  var st1=useState(""),newPassword=st1[0],setNewPassword=st1[1];
+  var st2=useState(""),confirmPassword=st2[0],setConfirmPassword=st2[1];
+  var st3=useState(""),error=st3[0],setError=st3[1];
+  
+  function handleReset(){
+    setError("");
+    if(!newPassword||!confirmPassword){
+      setError("Email/password harus diisi");return;
+    }
+    if(newPassword.length<8){
+      setError("Password minimal 8 karakter");return;
+    }
+    if(!/[0-9]/.test(newPassword)){
+      setError("Password harus mengandung angka");return;
+    }
+    if(newPassword!==confirmPassword){
+      setError("Password tidak cocok");return;
+    }
+    onReset(newPassword);
+    onClose();
+  }
+  
+  return h("div",{className:"card",style:{maxWidth:400,width:"100%",margin:20}},
+    h("div",{style:{fontSize:14,fontWeight:500,marginBottom:16}},"Reset Password"),
+    h("div",{style:{padding:12,background:"#e1f5ee",borderRadius:8,marginBottom:12,fontSize:12,color:"#0f6e56"}},
+      "Reset password untuk: ",h("b",null,user.email)
+    ),
+    h("div",{style:{marginBottom:12}},
+      h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Password Baru"),
+      h("input",{type:"password",value:newPassword,onChange:function(e){setNewPassword(e.target.value);},placeholder:"Min 8 karakter + angka"})
+    ),
+    h("div",{style:{marginBottom:12}},
+      h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Konfirmasi Password"),
+      h("input",{type:"password",value:confirmPassword,onChange:function(e){setConfirmPassword(e.target.value);},placeholder:"Tulis ulang password"})
+    ),
+    error&&h("div",{style:{padding:"8px 10px",background:"#fef2f2",borderRadius:6,color:"#991b1b",fontSize:12,marginBottom:12}},error),
+    h("div",{className:"row"},
+      h("button",{className:"btnp",style:{background:"#185fa5",color:"#fff",border:"none"},onClick:handleReset},"Reset Password"),
+      h("button",{onClick:onClose},"Batal")
+    )
+  );
+}
+
+function BulkActionModal(props){
+  var selectedCount=props.selectedCount;
+  var onAction=props.onAction;
+  var onClose=props.onClose;
+  var st1=useState("status"),actionType=st1[0],setActionType=st1[1];
+  var st2=useState("LUNAS"),statusValue=st2[0],setStatusValue=st2[1];
+  var st3=useState("user"),roleValue=st3[0],setRoleValue=st3[1];
+  var st4=useState(true),isActiveValue=st4[0],setIsActiveValue=st4[1];
+  
+  function handleBulkAction(){
+    if(actionType==="status"){
+      onAction("bulk-status",{payment_status:statusValue});
+    }else if(actionType==="role"){
+      onAction("bulk-role",{role:roleValue});
+    }else if(actionType==="toggle-active"){
+      onAction("bulk-toggle",{is_active:isActiveValue});
+    }
+  }
+  
+  return h("div",{className:"card",style:{maxWidth:420,width:"100%",margin:20}},
+    h("div",{style:{fontSize:14,fontWeight:500,marginBottom:4}},"Bulk Action"),
+    h("div",{style:{fontSize:12,color:"#888",marginBottom:16}},"Terapkan aksi ke "+selectedCount+" user"),
+    
+    h("div",{style:{marginBottom:16}},
+      h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:8}},"Pilih Aksi"),
+      h("div",{className:"row",style:{gap:8,flexWrap:"wrap"}},
+        [
+          {key:"status",label:"Set Status",desc:"Ubah status pembayaran"},
+          {key:"role",label:"Set Role",desc:"Ubah role user"},
+          {key:"toggle-active",label:"Aktif/Nonaktif",desc:"Toggle status aktif"}
+        ].map(function(opt){
+          return h("label",{key:opt.key,style:{cursor:"pointer",flex:1,minWidth:100,padding:"8px 10px",border:"1px solid #e5edf4",borderRadius:6,background:actionType===opt.key?"#e1f5ee":"#fff"}},
+            h("input",{type:"radio",name:"action",value:opt.key,checked:actionType===opt.key,onChange:function(){setActionType(opt.key);},style:{marginRight:6,cursor:"pointer"}}),
+            h("span",{style:{fontSize:12,fontWeight:500,color:actionType===opt.key?"#0f6e56":"#555"}},opt.label)
+          );
+        })
+      )
+    ),
+    
+    actionType==="status"&&h("div",{style:{marginBottom:16}},
+      h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:6}},"Status Pembayaran"),
+      h("select",{value:statusValue,onChange:function(e){setStatusValue(e.target.value);}},
+        h("option",{value:"NONE"},"NONE"),
+        h("option",{value:"PENDING"},"PENDING"),
+        h("option",{value:"LUNAS"},"LUNAS")
+      )
+    ),
+    
+    actionType==="role"&&h("div",{style:{marginBottom:16}},
+      h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:6}},"Role"),
+      h("select",{value:roleValue,onChange:function(e){setRoleValue(e.target.value);}},
+        h("option",{value:"user"},"User"),
+        h("option",{value:"admin"},"Admin")
+      )
+    ),
+    
+    actionType==="toggle-active"&&h("div",{style:{marginBottom:16}},
+      h("label",{className:"row",style:{fontSize:12,gap:8,cursor:"pointer"}},
+        h("input",{type:"radio",name:"active",value:"true",checked:isActiveValue,onChange:function(){setIsActiveValue(true);},style:{cursor:"pointer"}}),
+        h("span",null,"Aktifkan")
+      ),
+      h("label",{className:"row",style:{fontSize:12,gap:8,cursor:"pointer",marginTop:8}},
+        h("input",{type:"radio",name:"active",value:"false",checked:!isActiveValue,onChange:function(){setIsActiveValue(false);},style:{cursor:"pointer"}}),
+        h("span",null,"Nonaktifkan")
+      )
+    ),
+    
+    h("div",{className:"row"},
+      h("button",{className:"btnp",style:{background:"#ba7517",color:"#fff",border:"none"},onClick:handleBulkAction},"Terapkan ("+selectedCount+")"),
       h("button",{onClick:onClose},"Batal")
     )
   );
