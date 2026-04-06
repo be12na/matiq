@@ -120,6 +120,72 @@ function pdo(array $env): PDO {
   return $db;
 }
 
+function ensureNotificationTables(PDO $db): void {
+  static $ensured = false;
+  if ($ensured) {
+    return;
+  }
+
+  $db->exec(
+    "CREATE TABLE IF NOT EXISTS user_contacts (
+      user_id VARCHAR(64) NOT NULL,
+      email VARCHAR(191) NOT NULL,
+      phone_number VARCHAR(32) NOT NULL,
+      is_whatsapp_opt_in TINYINT(1) NOT NULL DEFAULT 1,
+      updated_at DATETIME(3) NOT NULL,
+      PRIMARY KEY (user_id),
+      KEY idx_user_contacts_phone (phone_number)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  );
+
+  $db->exec(
+    "CREATE TABLE IF NOT EXISTS notification_logs (
+      id VARCHAR(64) NOT NULL,
+      event_type VARCHAR(64) NOT NULL,
+      channel ENUM('email','whatsapp') NOT NULL,
+      recipient VARCHAR(191) NOT NULL,
+      status ENUM('sent','failed','queued','retry') NOT NULL,
+      attempt INT NOT NULL DEFAULT 1,
+      provider VARCHAR(64) NOT NULL,
+      http_status VARCHAR(16) DEFAULT NULL,
+      error_message VARCHAR(500) DEFAULT NULL,
+      response_excerpt TEXT,
+      queue_id VARCHAR(64) DEFAULT NULL,
+      user_id VARCHAR(64) DEFAULT NULL,
+      created_at DATETIME(3) NOT NULL,
+      updated_at DATETIME(3) NOT NULL,
+      PRIMARY KEY (id),
+      KEY idx_notification_logs_created_at (created_at),
+      KEY idx_notification_logs_channel_status (channel,status),
+      KEY idx_notification_logs_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  );
+
+  $db->exec(
+    "CREATE TABLE IF NOT EXISTS whatsapp_queue (
+      queue_id VARCHAR(64) NOT NULL,
+      user_id VARCHAR(64) DEFAULT NULL,
+      email VARCHAR(191) DEFAULT NULL,
+      phone_number VARCHAR(32) NOT NULL,
+      message_type VARCHAR(64) NOT NULL,
+      message_payload LONGTEXT,
+      status ENUM('pending','retry','sent','failed') NOT NULL DEFAULT 'pending',
+      attempt_count INT NOT NULL DEFAULT 0,
+      max_attempts INT NOT NULL DEFAULT 3,
+      next_retry_at DATETIME(3) NOT NULL,
+      last_error VARCHAR(500) DEFAULT NULL,
+      provider_message_id VARCHAR(128) DEFAULT NULL,
+      created_at DATETIME(3) NOT NULL,
+      updated_at DATETIME(3) NOT NULL,
+      PRIMARY KEY (queue_id),
+      KEY idx_whatsapp_queue_status_retry (status,next_retry_at),
+      KEY idx_whatsapp_queue_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  );
+
+  $ensured = true;
+}
+
 function randomId(string $prefix, int $bytes = 16): string {
   return $prefix . bin2hex(random_bytes($bytes));
 }
@@ -927,6 +993,11 @@ if ($method === 'GET' && !empty($_GET)) {
 
 try {
   $db = pdo($env);
+  try {
+    ensureNotificationTables($db);
+  } catch (Throwable $e) {
+    // Non-fatal: auth flow must remain available even when schema bootstrap fails.
+  }
 
   if ($method === 'GET' && $uriPath === '/health') {
     $db->query('SELECT 1');
@@ -1030,21 +1101,25 @@ try {
       ':last_login' => null,
     ]);
 
-    $cins = $db->prepare(
-      'INSERT INTO user_contacts (user_id, email, phone_number, is_whatsapp_opt_in, updated_at)
-       VALUES (:user_id, :email, :phone_number, 1, :updated_at)
-       ON DUPLICATE KEY UPDATE
-         email = VALUES(email),
-         phone_number = VALUES(phone_number),
-         is_whatsapp_opt_in = VALUES(is_whatsapp_opt_in),
-         updated_at = VALUES(updated_at)'
-    );
-    $cins->execute([
-      ':user_id' => $userId,
-      ':email' => $email,
-      ':phone_number' => $wa,
-      ':updated_at' => $now,
-    ]);
+    try {
+      $cins = $db->prepare(
+        'INSERT INTO user_contacts (user_id, email, phone_number, is_whatsapp_opt_in, updated_at)
+         VALUES (:user_id, :email, :phone_number, 1, :updated_at)
+         ON DUPLICATE KEY UPDATE
+           email = VALUES(email),
+           phone_number = VALUES(phone_number),
+           is_whatsapp_opt_in = VALUES(is_whatsapp_opt_in),
+           updated_at = VALUES(updated_at)'
+      );
+      $cins->execute([
+        ':user_id' => $userId,
+        ':email' => $email,
+        ':phone_number' => $wa,
+        ':updated_at' => $now,
+      ]);
+    } catch (Throwable $e) {
+      // Do not block registration if contact table is unavailable.
+    }
 
     try {
       $waBody = "Halo {$name}, pendaftaran MATIQ berhasil. Silakan login menggunakan email {$email}.";
