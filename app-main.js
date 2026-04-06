@@ -768,7 +768,7 @@ function ForgotPasswordModal(props){
     h("div",{className:"card auth-card",style:{maxWidth:400,width:"100%",margin:10}},
       h("div",{style:{marginBottom:16}},
         h("div",{className:"auth-title",style:{marginBottom:4}},"Lupa Password?"),
-        h("div",{className:"auth-subtitle",style:{fontSize:12},"Masukkan email Anda untuk menerima link reset password.")
+        h("div",{className:"auth-subtitle",style:{fontSize:12}},"Masukkan email Anda untuk menerima link reset password.")
       ),
       successMessage&&h("div",{style:{padding:"8px 12px",background:"#dcfce7",border:"1px solid #86efac",borderRadius:10,color:"#166534",fontSize:12,marginBottom:12}},successMessage),
       !successMessage&&h("form",{onSubmit:handleSubmit},
