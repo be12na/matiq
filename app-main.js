@@ -738,6 +738,8 @@ function AuthBrandPanel(props){
 function LoginPage(props){
   var onLogin=props.onLogin;
   var onSwitch=props.onSwitch;
+  var notice=String(props.notice||"");
+  var onClearNotice=props.onClearNotice||function(){};
   var st1=useState(""),email=st1[0],setEmail=st1[1];
   var st2=useState(""),password=st2[0],setPassword=st2[1];
   var st3=useState(""),error=st3[0],setError=st3[1];
@@ -750,6 +752,7 @@ function LoginPage(props){
       .then(function(res){
         setLoading(false);
         if(res.ok){
+          onClearNotice();
           saveAuth(res.token,res.user);
           onLogin(res.user,res.token);
         }else{
@@ -781,6 +784,7 @@ function LoginPage(props){
           )
         ),
         h("form",{onSubmit:handleSubmit},
+          notice&&h("div",{style:{padding:"8px 12px",background:"#dcfce7",border:"1px solid #86efac",borderRadius:10,color:"#166534",fontSize:12,marginBottom:12}},notice),
           h("div",{style:{marginBottom:12}},
             h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Email"),
             h("input",{type:"email",value:email,onChange:function(e){setEmail(e.target.value);},placeholder:"email@example.com",required:true,disabled:loading})
@@ -802,7 +806,7 @@ function LoginPage(props){
 }
 
 function RegisterPage(props){
-  var onRegister=props.onRegister;
+  var onRegisterSuccess=props.onRegisterSuccess||function(){};
   var onSwitch=props.onSwitch;
   var st1=useState(""),name=st1[0],setName=st1[1];
   var st2=useState(""),email=st2[0],setEmail=st2[1];
@@ -840,8 +844,7 @@ function RegisterPage(props){
       .then(function(res){
         setLoading(false);
         if(res.ok){
-          saveAuth(res.token,res.user);
-          onRegister(res.user,res.token);
+          onRegisterSuccess(res.message||"Pendaftaran berhasil. Silakan login untuk melanjutkan.");
         }else{
           setError(res.error||"Registrasi gagal");
         }
@@ -1264,6 +1267,7 @@ function App(){
   var stAuthToken=useState(authInit.token),authToken=stAuthToken[0],setAuthToken=stAuthToken[1];
   var stAuthPage=useState("login"),authPage=stAuthPage[0],setAuthPage=stAuthPage[1];
   var stAuthChecking=useState(true),authChecking=stAuthChecking[0],setAuthChecking=stAuthChecking[1];
+  var stAuthNotice=useState(""),authNotice=stAuthNotice[0],setAuthNotice=stAuthNotice[1];
   
   // ─────────────────────────────────────────────────────────────────────────
   // EXISTING STATE
@@ -1306,6 +1310,12 @@ function App(){
     setCurrentUser(null);
     setAuthToken("");
     setIsLoggedIn(false);
+    setAuthPage("login");
+    setAuthNotice("");
+  }
+
+  function handleRegisterSuccess(msg){
+    setAuthNotice(String(msg||"Pendaftaran berhasil. Silakan login untuk melanjutkan."));
     setAuthPage("login");
   }
   
@@ -1546,9 +1556,9 @@ function App(){
   
   if(!isLoggedIn){
     if(authPage==="register"){
-      return h(RegisterPage,{onRegister:handleLogin,onSwitch:setAuthPage});
+      return h(RegisterPage,{onRegisterSuccess:handleRegisterSuccess,onSwitch:function(nextPage){setAuthPage(nextPage);if(nextPage!=="login")setAuthNotice("");}});
     }
-    return h(LoginPage,{onLogin:handleLogin,onSwitch:setAuthPage});
+    return h(LoginPage,{onLogin:handleLogin,onSwitch:function(nextPage){setAuthPage(nextPage);if(nextPage!=="login")setAuthNotice("");},notice:authNotice,onClearNotice:function(){setAuthNotice("");}});
   }
   
   // Access denied for non-paid users on protected tabs

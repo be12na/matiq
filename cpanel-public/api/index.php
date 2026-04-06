@@ -765,6 +765,85 @@ function sendWhatsappViaStarsender(array $env, array $queueItem): array {
   ];
 }
 
+function sendEmailViaMailketing(array $env, string $recipient, string $subject, string $content): array {
+  $apiUrl = trim(envGet($env, 'MAILKETING_API_URL', 'https://api.mailketing.co.id/api/v1/send'));
+  $apiToken = trim(envGet($env, 'MAILKETING_API_KEY', ''));
+  $fromName = trim(envGet($env, 'MAILKETING_FROM_NAME', 'MATIQ'));
+  $fromEmail = trim(envGet($env, 'MAILKETING_SENDER', ''));
+  $timeoutMs = (int)envGet($env, 'MAILKETING_TIMEOUT_MS', '15000');
+  if ($timeoutMs < 1000) {
+    $timeoutMs = 15000;
+  }
+
+  if ($apiToken === '' || $fromEmail === '') {
+    return [
+      'ok' => false,
+      'http_status' => 0,
+      'error' => 'MAILKETING_API_KEY atau MAILKETING_SENDER belum dikonfigurasi',
+      'response_excerpt' => '',
+    ];
+  }
+
+  $payload = [
+    'api_token' => $apiToken,
+    'from_name' => $fromName !== '' ? $fromName : 'MATIQ',
+    'from_email' => $fromEmail,
+    'recipient' => trim($recipient),
+    'subject' => trim($subject),
+    'content' => $content,
+  ];
+
+  $ch = curl_init();
+  curl_setopt_array($ch, [
+    CURLOPT_URL => $apiUrl,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_ENCODING => '',
+    CURLOPT_MAXREDIRS => 5,
+    CURLOPT_TIMEOUT_MS => $timeoutMs,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+    CURLOPT_CUSTOMREQUEST => 'POST',
+    CURLOPT_POSTFIELDS => http_build_query($payload),
+    CURLOPT_HTTPHEADER => [
+      'Content-Type: application/x-www-form-urlencoded',
+    ],
+  ]);
+
+  $responseRaw = curl_exec($ch);
+  $httpStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  $curlError = curl_error($ch);
+  curl_close($ch);
+
+  $decoded = [];
+  if (is_string($responseRaw) && $responseRaw !== '') {
+    $json = json_decode($responseRaw, true);
+    if (is_array($json)) {
+      $decoded = $json;
+    }
+  }
+
+  $isSuccess = ($httpStatus >= 200 && $httpStatus < 300 && strtolower((string)($decoded['status'] ?? '')) === 'success');
+  $respMsg = (string)($decoded['response'] ?? '');
+  $respExcerpt = is_string($responseRaw) ? substr($responseRaw, 0, 450) : '';
+  $err = '';
+  if (!$isSuccess) {
+    if ($curlError !== '') {
+      $err = 'cURL: ' . $curlError;
+    } elseif ($respMsg !== '') {
+      $err = $respMsg;
+    } else {
+      $err = 'Mailketing request gagal';
+    }
+  }
+
+  return [
+    'ok' => $isSuccess,
+    'http_status' => $httpStatus,
+    'error' => $err,
+    'response_excerpt' => $respExcerpt,
+  ];
+}
+
 function logNotification(
   PDO $db,
   string $eventType,
@@ -930,6 +1009,8 @@ try {
     $salt = bin2hex(random_bytes(16));
     $hash = password_hash($password, PASSWORD_BCRYPT);
     $now = utcNowMs();
+    $maxAttempts = max(1, (int)envGet($env, 'NOTIFICATION_RETRY_MAX', '3'));
+    $waQueueItem = null;
 
     $db->beginTransaction();
     $ins = $db->prepare(
@@ -964,14 +1045,164 @@ try {
       ':phone_number' => $wa,
       ':updated_at' => $now,
     ]);
+
+    try {
+      $waBody = "Halo {$name}, pendaftaran MATIQ berhasil. Silakan login menggunakan email {$email}.";
+      $waPayload = [
+        'messageType' => 'text',
+        'to' => $wa,
+        'body' => $waBody,
+      ];
+      $queueId = randomId('waq_', 12);
+      $qins = $db->prepare(
+        'INSERT INTO whatsapp_queue (queue_id, user_id, email, phone_number, message_type, message_payload, status, attempt_count, max_attempts, next_retry_at, created_at, updated_at)
+         VALUES (:queue_id, :user_id, :email, :phone_number, :message_type, :message_payload, :status, :attempt_count, :max_attempts, :next_retry_at, :created_at, :updated_at)'
+      );
+      $qins->execute([
+        ':queue_id' => $queueId,
+        ':user_id' => $userId,
+        ':email' => $email,
+        ':phone_number' => $wa,
+        ':message_type' => 'welcome_register',
+        ':message_payload' => json_encode($waPayload, JSON_UNESCAPED_SLASHES),
+        ':status' => 'pending',
+        ':attempt_count' => 0,
+        ':max_attempts' => $maxAttempts,
+        ':next_retry_at' => $now,
+        ':created_at' => $now,
+        ':updated_at' => $now,
+      ]);
+
+      $waQueueItem = [
+        'queue_id' => $queueId,
+        'user_id' => $userId,
+        'email' => $email,
+        'phone_number' => $wa,
+        'message_payload' => json_encode($waPayload, JSON_UNESCAPED_SLASHES),
+        'attempt_count' => 0,
+        'max_attempts' => $maxAttempts,
+      ];
+    } catch (Throwable $e) {
+      $waQueueItem = null;
+    }
+
     $db->commit();
 
-    $user = $db->prepare('SELECT * FROM users WHERE id = :id');
-    $user->execute([':id' => $userId]);
-    $u = $user->fetch();
-    $token = issueSession($db, $u, (int)envGet($env, 'AUTH_TOKEN_TTL_HOURS', '24'));
+    $appUrl = trim(envGet($env, 'APP_URL', ''));
+    $safeName = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
+    $safeEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
+    $loginHref = $appUrl !== '' ? rtrim($appUrl, '/') : '';
+    $welcomeSubject = 'Selamat Datang di MATIQ';
+    $welcomeContent = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">'
+      . '<p>Halo <strong>' . $safeName . '</strong>,</p>'
+      . '<p>Pendaftaran akun MATIQ Anda berhasil dengan email <strong>' . $safeEmail . '</strong>.</p>'
+      . '<p>Silakan login untuk mulai menggunakan dashboard.</p>'
+      . ($loginHref !== '' ? '<p><a href="' . htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8') . '">Buka Halaman Login</a></p>' : '')
+      . '<p>Terima kasih.</p>'
+      . '</div>';
 
-    out(['ok' => true, 'token' => $token, 'user' => userToPublic($u)]);
+    $emailRes = sendEmailViaMailketing($env, $email, $welcomeSubject, $welcomeContent);
+    logNotification(
+      $db,
+      'auth_register_welcome',
+      'email',
+      $email,
+      $emailRes['ok'] ? 'sent' : 'failed',
+      1,
+      'mailketing',
+      (int)($emailRes['http_status'] ?? 0),
+      (string)($emailRes['error'] ?? ''),
+      (string)($emailRes['response_excerpt'] ?? ''),
+      '',
+      $userId
+    );
+
+    if (is_array($waQueueItem)) {
+      $attempt = 1;
+      $waRes = sendWhatsappViaStarsender($env, $waQueueItem);
+      if ($waRes['ok']) {
+        $fields = [
+          'status = :status',
+          'attempt_count = :attempt_count',
+          'updated_at = :updated_at',
+        ];
+        $params = [
+          ':status' => 'sent',
+          ':attempt_count' => $attempt,
+          ':updated_at' => utcNowMs(),
+          ':queue_id' => (string)$waQueueItem['queue_id'],
+        ];
+        if (tableHasColumn($db, 'whatsapp_queue', 'provider_message_id')) {
+          $fields[] = 'provider_message_id = :provider_message_id';
+          $params[':provider_message_id'] = (string)($waRes['provider_message_id'] ?? '');
+        }
+        if (tableHasColumn($db, 'whatsapp_queue', 'last_error')) {
+          $fields[] = 'last_error = :last_error';
+          $params[':last_error'] = null;
+        }
+        $upd = $db->prepare('UPDATE whatsapp_queue SET ' . implode(', ', $fields) . ' WHERE queue_id = :queue_id');
+        $upd->execute($params);
+
+        logNotification(
+          $db,
+          'auth_register_welcome',
+          'whatsapp',
+          (string)$waQueueItem['phone_number'],
+          'sent',
+          $attempt,
+          'starsender',
+          (int)($waRes['http_status'] ?? 0),
+          '',
+          (string)($waRes['response_excerpt'] ?? ''),
+          (string)$waQueueItem['queue_id'],
+          $userId
+        );
+      } else {
+        $nextStatus = ((int)$waQueueItem['max_attempts'] > 1) ? 'retry' : 'failed';
+        $fields = [
+          'status = :status',
+          'attempt_count = :attempt_count',
+          'updated_at = :updated_at',
+        ];
+        $params = [
+          ':status' => $nextStatus,
+          ':attempt_count' => $attempt,
+          ':updated_at' => utcNowMs(),
+          ':queue_id' => (string)$waQueueItem['queue_id'],
+        ];
+        if (tableHasColumn($db, 'whatsapp_queue', 'last_error')) {
+          $fields[] = 'last_error = :last_error';
+          $params[':last_error'] = substr((string)($waRes['error'] ?? 'Unknown error'), 0, 500);
+        }
+        if ($nextStatus === 'retry' && tableHasColumn($db, 'whatsapp_queue', 'next_retry_at')) {
+          $fields[] = 'next_retry_at = :next_retry_at';
+          $params[':next_retry_at'] = utcNow()->modify('+' . starsenderDelaySeconds($env) . ' seconds')->format('Y-m-d H:i:s.v');
+        }
+        $upd = $db->prepare('UPDATE whatsapp_queue SET ' . implode(', ', $fields) . ' WHERE queue_id = :queue_id');
+        $upd->execute($params);
+
+        logNotification(
+          $db,
+          'auth_register_welcome',
+          'whatsapp',
+          (string)$waQueueItem['phone_number'],
+          $nextStatus,
+          $attempt,
+          'starsender',
+          (int)($waRes['http_status'] ?? 0),
+          (string)($waRes['error'] ?? ''),
+          (string)($waRes['response_excerpt'] ?? ''),
+          (string)$waQueueItem['queue_id'],
+          $userId
+        );
+      }
+    }
+
+    out([
+      'ok' => true,
+      'message' => 'Pendaftaran berhasil. Silakan login untuk melanjutkan.',
+      'redirect_to' => 'login',
+    ]);
   }
 
   if ($method === 'POST' && $uriPath === '/auth/login') {
