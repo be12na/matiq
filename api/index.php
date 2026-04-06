@@ -1089,85 +1089,95 @@ try {
     $maxAttempts = max(1, (int)envGet($env, 'NOTIFICATION_RETRY_MAX', '3'));
     $waQueueItem = null;
 
-    $db->beginTransaction();
-    $ins = $db->prepare(
-      'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, created_at, updated_at, last_login, is_active)
-       VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :created_at, :updated_at, :last_login, 1)'
-    );
-    $ins->execute([
-      ':id' => $userId,
-      ':email' => $email,
-      ':password_hash' => $hash,
-      ':salt' => $salt,
-      ':name' => $name,
-      ':role' => 'user',
-      ':payment_status' => 'NONE',
-      ':created_at' => $now,
-      ':updated_at' => $now,
-      ':last_login' => null,
-    ]);
-
     try {
-      $cins = $db->prepare(
-        'INSERT INTO user_contacts (user_id, email, phone_number, is_whatsapp_opt_in, updated_at)
-         VALUES (:user_id, :email, :phone_number, 1, :updated_at)
-         ON DUPLICATE KEY UPDATE
-           email = VALUES(email),
-           phone_number = VALUES(phone_number),
-           is_whatsapp_opt_in = VALUES(is_whatsapp_opt_in),
-           updated_at = VALUES(updated_at)'
+      $db->beginTransaction();
+      $ins = $db->prepare(
+        'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, created_at, updated_at, last_login, is_active)
+         VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :created_at, :updated_at, :last_login, 1)'
       );
-      $cins->execute([
-        ':user_id' => $userId,
+      $ins->execute([
+        ':id' => $userId,
         ':email' => $email,
-        ':phone_number' => $wa,
-        ':updated_at' => $now,
-      ]);
-    } catch (Throwable $e) {
-      // Do not block registration if contact table is unavailable.
-    }
-
-    try {
-      $waBody = "Halo {$name}! 🎉 Selamat, akun MATIQ kamu udah siap! \n\nLogin di sini pake email {$email} dan mulai pantau campaign Meta Ads-mu. Dashboard ini bakal jadi temen terbaik buat ambil keputusan yang lebih smart. \n\nSiap? Mari kita scale! 🚀";
-      $waPayload = [
-        'messageType' => 'text',
-        'to' => $wa,
-        'body' => $waBody,
-      ];
-      $queueId = randomId('waq_', 12);
-      $qins = $db->prepare(
-        'INSERT INTO whatsapp_queue (queue_id, user_id, email, phone_number, message_type, message_payload, status, attempt_count, max_attempts, next_retry_at, created_at, updated_at)
-         VALUES (:queue_id, :user_id, :email, :phone_number, :message_type, :message_payload, :status, :attempt_count, :max_attempts, :next_retry_at, :created_at, :updated_at)'
-      );
-      $qins->execute([
-        ':queue_id' => $queueId,
-        ':user_id' => $userId,
-        ':email' => $email,
-        ':phone_number' => $wa,
-        ':message_type' => 'welcome_register',
-        ':message_payload' => json_encode($waPayload, JSON_UNESCAPED_SLASHES),
-        ':status' => 'pending',
-        ':attempt_count' => 0,
-        ':max_attempts' => $maxAttempts,
-        ':next_retry_at' => $now,
+        ':password_hash' => $hash,
+        ':salt' => $salt,
+        ':name' => $name,
+        ':role' => 'user',
+        ':payment_status' => 'NONE',
         ':created_at' => $now,
         ':updated_at' => $now,
+        ':last_login' => null,
       ]);
 
-      $waQueueItem = [
-        'queue_id' => $queueId,
-        'user_id' => $userId,
-        'email' => $email,
-        'phone_number' => $wa,
-        'message_payload' => json_encode($waPayload, JSON_UNESCAPED_SLASHES),
-        'attempt_count' => 0,
-        'max_attempts' => $maxAttempts,
-      ];
-    } catch (Throwable $e) {
-      $waQueueItem = null;
-    }
+      try {
+        $cins = $db->prepare(
+          'INSERT INTO user_contacts (user_id, email, phone_number, is_whatsapp_opt_in, updated_at)
+           VALUES (:user_id, :email, :phone_number, 1, :updated_at)
+           ON DUPLICATE KEY UPDATE
+             email = VALUES(email),
+             phone_number = VALUES(phone_number),
+             is_whatsapp_opt_in = VALUES(is_whatsapp_opt_in),
+             updated_at = VALUES(updated_at)'
+        );
+        $cins->execute([
+          ':user_id' => $userId,
+          ':email' => $email,
+          ':phone_number' => $wa,
+          ':updated_at' => $now,
+        ]);
+      } catch (Throwable $e) {
+        // Do not block registration if contact table is unavailable.
+      }
 
-    $db->commit();
+      try {
+        $waBody = "Halo {$name}! 🎉 Selamat, akun MATIQ kamu udah siap! \n\nLogin di sini pake email {$email} dan mulai pantau campaign Meta Ads-mu. Dashboard ini bakal jadi temen terbaik buat ambil keputusan yang lebih smart. \n\nSiap? Mari kita scale! 🚀";
+        $waPayload = [
+          'messageType' => 'text',
+          'to' => $wa,
+          'body' => $waBody,
+        ];
+        $queueId = randomId('waq_', 12);
+        $qins = $db->prepare(
+          'INSERT INTO whatsapp_queue (queue_id, user_id, email, phone_number, message_type, message_payload, status, attempt_count, max_attempts, next_retry_at, created_at, updated_at)
+           VALUES (:queue_id, :user_id, :email, :phone_number, :message_type, :message_payload, :status, :attempt_count, :max_attempts, :next_retry_at, :created_at, :updated_at)'
+        );
+        $qins->execute([
+          ':queue_id' => $queueId,
+          ':user_id' => $userId,
+          ':email' => $email,
+          ':phone_number' => $wa,
+          ':message_type' => 'welcome_register',
+          ':message_payload' => json_encode($waPayload, JSON_UNESCAPED_SLASHES),
+          ':status' => 'pending',
+          ':attempt_count' => 0,
+          ':max_attempts' => $maxAttempts,
+          ':next_retry_at' => $now,
+          ':created_at' => $now,
+          ':updated_at' => $now,
+        ]);
+
+        $waQueueItem = [
+          'queue_id' => $queueId,
+          'user_id' => $userId,
+          'email' => $email,
+          'phone_number' => $wa,
+          'message_payload' => json_encode($waPayload, JSON_UNESCAPED_SLASHES),
+          'attempt_count' => 0,
+          'max_attempts' => $maxAttempts,
+        ];
+      } catch (Throwable $e) {
+        $waQueueItem = null;
+      }
+
+      $db->commit();
+    } catch (Throwable $txnErr) {
+      try {
+        $db->rollback();
+      } catch (Throwable $e) {
+        // Ignore rollback errors
+      }
+      fail('Gagal membuat akun: ' . $txnErr->getMessage(), 500);
+      return;
+    }
 
     $appUrl = trim(envGet($env, 'APP_URL', ''));
     $safeName = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
