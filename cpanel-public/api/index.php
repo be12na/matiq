@@ -263,11 +263,11 @@ function issueSession(PDO $db, array $user, int $ttlHours): string {
   $createdAt = $now->format('Y-m-d H:i:s.v');
   $expiresAt = $now->modify('+' . $ttl . ' hours')->format('Y-m-d H:i:s.v');
 
-  $stmt = $db->prepare(
+  $insertSessionStmt = $db->prepare(
     'INSERT INTO sessions (token_id, user_id, email, role, payment_status, created_at, expires_at, is_revoked)
      VALUES (:token_id, :user_id, :email, :role, :payment_status, :created_at, :expires_at, 0)'
   );
-  $stmt->execute([
+  $insertSessionStmt->execute([
     ':token_id' => $tokenId,
     ':user_id' => $user['id'],
     ':email' => $user['email'],
@@ -293,7 +293,7 @@ function getSessionUser(PDO $db, string $token): ?array {
     return null;
   }
 
-  $stmt = $db->prepare(
+  $getSessionStmt = $db->prepare(
     'SELECT
        s.token_id,
        s.user_id,
@@ -315,8 +315,8 @@ function getSessionUser(PDO $db, string $token): ?array {
      WHERE s.token_id = :token
      LIMIT 1'
   );
-  $stmt->execute([':token' => $token]);
-  $row = $stmt->fetch();
+  $getSessionStmt->execute([':token' => $token]);
+  $row = $getSessionStmt->fetch();
   if (!$row) {
     return null;
   }
