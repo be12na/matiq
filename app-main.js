@@ -1328,11 +1328,17 @@ function App(){
     setData(DEF);
     sd(DEF);
     setLiveState("local");
-    // Call server endpoint to clear user's notes from database
-    req("/app/clear-data","POST",{}).then(function(){
-      alert("Data berhasil direset. Silakan refresh atau sync data baru.");
+    // Call server endpoint to clear database
+    req("/app/clear-data","POST",{}).then(function(res){
+      if(res.ok){
+        var msg="Data berhasil direset. Silakan refresh browser untuk melihat perubahan.";
+        if(res.verified===false){msg="⚠️ Ada data yang tidak terhapus. Silakan hubungi admin.";}
+        alert(msg);
+      }else{
+        alert("Error reset data: "+(res.error||"Unknown error"));
+      }
     }).catch(function(err){
-      alert("Data lokal direset, tapi gagal clear di server (network error). Silakan refresh.");
+      alert("Data lokal direset, tapi gagal clear di server. Error: "+(err&&err.message||"Network error"));
     });
   }
   

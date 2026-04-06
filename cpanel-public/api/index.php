@@ -2016,22 +2016,56 @@ try {
 
   if ($method === 'POST' && $uriPath === '/app/clear-data') {
     // Clear all campaign data and notes from database
-    // WARNING: This clears data for ALL users (database is shared state)
-    // Frontend handles local localStorage reset separately
+    $errors = [];
+    $deleted = [];
+
+    // Try to clear notes
     try {
-      $db->exec('TRUNCATE TABLE notes');
+      $result = $db->exec('DELETE FROM notes WHERE 1=1');
+      $deleted[] = "notes ({$result} rows)";
     } catch (Throwable $e) {
-      // Table may not exist yet, ignore
-    }
-    try {
-      $db->exec('TRUNCATE TABLE campaigns');
-      $db->exec('TRUNCATE TABLE adsets');
-      $db->exec('TRUNCATE TABLE ads');
-    } catch (Throwable $e) {
-      // Tables may not exist yet, ignore
+      $errors[] = 'notes: ' . $e->getMessage();
     }
 
-    out(['ok' => true, 'message' => 'Data telah direset. Refresh browser untuk melihat data kosong.']);
+    // Try to clear campaigns, adsets, ads
+    try {
+      $c1 = $db->exec('DELETE FROM campaigns WHERE 1=1');
+      $c2 = $db->exec('DELETE FROM adsets WHERE 1=1');
+      $c3 = $db->exec('DELETE FROM ads WHERE 1=1');
+      $deleted[] = "campaigns ({$c1}), adsets ({$c2}), ads ({$c3}) rows";
+    } catch (Throwable $e) {
+      $errors[] = 'campaign tables: ' . $e->getMessage();
+    }
+
+    // Verify deletion
+    $campaignCount = 0;
+    $adsetCount = 0;
+    $adCount = 0;
+    try {
+      $campaignCount = (int)$db->query('SELECT COUNT(*) FROM campaigns')->fetchColumn();
+      $adsetCount = (int)$db->query('SELECT COUNT(*) FROM adsets')->fetchColumn();
+      $adCount = (int)$db->query('SELECT COUNT(*) FROM ads')->fetchColumn();
+    } catch (Throwable $e) {
+      // Ignore verification error
+    }
+
+    $verified = ($campaignCount === 0 && $adsetCount === 0 && $adCount === 0);
+
+    if (count($errors) > 0) {
+      fail(
+        'Gagal clear beberapa data: ' . implode('; ', $errors) . '. Hubungi admin.',
+        400,
+        ['cleared' => $deleted, 'remaining' => ['campaigns' => $campaignCount, 'adsets' => $adsetCount, 'ads' => $adCount]]
+      );
+    }
+
+    out([
+      'ok' => true,
+      'message' => 'Data berhasil direset.',
+      'deleted' => $deleted,
+      'verified' => $verified,
+      'remaining' => ['campaigns' => $campaignCount, 'adsets' => $adsetCount, 'ads' => $adCount],
+    ]);
   }
 
   if ($method === 'POST' && $uriPath === '/app/ai') {
