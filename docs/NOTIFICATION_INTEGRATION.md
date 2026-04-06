@@ -1,109 +1,95 @@
-# Integrasi Mailketing + Starsender
+# Integrasi Email Mailketing (Spec Resmi API)
 
-Dokumen ini menjelaskan konfigurasi notifikasi untuk:
+Dokumen ini mengunci kontrak integrasi email berdasarkan dokumentasi resmi:
 
-- email verifikasi pendaftaran,
-- email notifikasi login,
-- WhatsApp konfirmasi akun (queue + retry).
+- https://mailketing.co.id/docs/send-email-via-api/
 
-## 1) Script Properties yang wajib
+Fokus dokumen ini adalah mode backend PHP/MySQL pada cPanel (bukan Apps Script).
 
-Set di Apps Script -> Project Settings -> Script properties:
+## 1) Endpoint resmi Mailketing
 
-- `MAILKETING_API_URL`
-- `MAILKETING_API_KEY`
-- `MAILKETING_SENDER` (contoh: `no-reply@domainanda.com`)
-- `STARSENDER_API_URL`
-- `STARSENDER_API_KEY`
+- URL: `https://api.mailketing.co.id/api/v1/send`
+- Method: `POST`
+- Body format: `application/x-www-form-urlencoded` (sesuai contoh resmi cURL PHP)
+
+Parameter request yang wajib:
+
+- `api_token` (API token akun Mailketing)
+- `from_name` (nama pengirim)
+- `from_email` (email pengirim terverifikasi)
+- `recipient` (email tujuan)
+- `subject` (judul email)
+- `content` (isi email, plain text atau HTML)
+
+Parameter opsional:
+
+- `attach1`
+- `attach2`
+- `attach3`
+
+Catatan dokumen resmi menyebut attachment sebagai direct URL file, dan size file mengikuti batas Mailketing saat request diproses.
+
+## 2) Response resmi Mailketing
+
+Contoh response sukses:
+
+```json
+{"status":"success","response":"Mail Sent"}
+```
+
+Contoh response gagal dari docs resmi:
+
+- `User Not Found or Wrong API Token`
+- `Access Denied, Invalid Token`
+- `Unknown Sender, Please Add your Sender Email at Add Domain Menu`
+- `Empty From Name`
+- `No Credits, Please Top Up`
+- `Empty Recipient, Please Add recipient address`
+- `Blacklisted`
+- `Empty Subject, Please Add Subject Email`
+- `Empty Content, Please Add Email Content`
+
+## 3) Konfigurasi .env (server cPanel)
+
+Minimal konfigurasi untuk email API:
+
+- `MAILKETING_API_URL=https://api.mailketing.co.id/api/v1/send`
+- `MAILKETING_API_KEY=...`
+- `MAILKETING_FROM_NAME=...`
+- `MAILKETING_SENDER=sender@domain-verified.com`
 
 Opsional:
 
-- `STARSENDER_DEVICE_ID`
-- `MAILKETING_TIMEOUT_MS` (default `15000`)
-- `STARSENDER_TIMEOUT_MS` (default `15000`)
-- `NOTIFICATION_RETRY_MAX` (default `3`)
-- `NOTIFICATION_RETRY_DELAY_MS` (default `1200`)
-- `APP_PUBLIC_URL` (untuk membentuk link verifikasi di email)
+- `MAILKETING_TIMEOUT_MS=15000`
+- `NOTIFICATION_RETRY_MAX=3`
+- `NOTIFICATION_RETRY_DELAY_MS=1200`
 
-## 2) Data storage tambahan
+Semua variabel di atas harus disimpan di `.env` server (di luar source control).
 
-Sistem membuat sheet berikut otomatis:
+## 4) Mapping payload backend -> Mailketing
 
-- `user_contacts`
-- `notification_logs`
-- `whatsapp_queue`
+Backend wajib mengirim payload ke Mailketing dengan mapping berikut:
 
-## 3) Flow notifikasi
+- `api_token` <- `MAILKETING_API_KEY`
+- `from_name` <- `MAILKETING_FROM_NAME`
+- `from_email` <- `MAILKETING_SENDER`
+- `recipient` <- email user target
+- `subject` <- subject notifikasi
+- `content` <- isi notifikasi
 
-### Register
+## 5) Validasi integrasi produksi
 
-1. Validasi email/password/nama/nomor WhatsApp.
-2. User dibuat.
-3. `user_contacts` di-upsert.
-4. Email verifikasi pendaftaran dikirim via Mailketing (retry).
-5. Pesan WhatsApp konfirmasi di-enqueue ke `whatsapp_queue`.
-6. Queue diproses langsung 1 item (best effort), sisanya bisa diproses manual dari admin dashboard.
+Checklist verifikasi:
 
-### Login
+1. Request ke endpoint Mailketing menggunakan `POST` dan body form-url-encoded.
+2. `from_email` sudah terdaftar/terverifikasi di akun Mailketing.
+3. API key valid dan memiliki credit.
+4. Saat sukses, status log internal disimpan sebagai `sent`.
+5. Saat gagal (`status=failed`), backend menyimpan error message dari field `response` untuk debug.
 
-1. Validasi email/password.
-2. Session token dibuat.
-3. Email notifikasi login dikirim via Mailketing (retry).
+## 6) Troubleshooting cepat
 
-## 4) Admin monitoring
-
-Dashboard Admin menampilkan:
-
-- ringkasan success/failed email,
-- ringkasan WA sent/pending/retry,
-- log pengiriman terbaru,
-- tombol manual `Proses Queue WhatsApp`.
-
-Endpoint admin tambahan:
-
-- `GET /admin/notifications` -> status queue + log
-- `POST /admin/notifications` dengan `{ "process_queue": true, "max_items": 10 }` -> proses queue
-
-## 5) Retry + queue behavior
-
-- Email: retry sinkron dengan backoff (`NOTIFICATION_RETRY_MAX`, `NOTIFICATION_RETRY_DELAY_MS`).
-- WA: retry asinkron berbasis queue (`pending` -> `retry` -> `failed/sent`).
-- Kondisi retry: timeout, `429`, atau `5xx`.
-
-## 6) Test skenario yang harus dijalankan
-
-### A. Timeout koneksi
-
-1. Set `MAILKETING_TIMEOUT_MS=1` (sementara).
-2. Coba register/login.
-3. Pastikan error tidak merusak auth flow, dan `notification_logs` mencatat failed + attempt.
-
-### B. Invalid API key
-
-1. Isi `MAILKETING_API_KEY` atau `STARSENDER_API_KEY` dengan nilai salah.
-2. Coba register/login.
-3. Pastikan status `failed` tercatat, plus retry berjalan sesuai aturan.
-
-### C. Format nomor WhatsApp salah
-
-1. Register dengan nomor invalid (contoh: `0812-ABCD`).
-2. Pastikan API register menolak request dengan error validasi.
-
-### D. Queue processing
-
-1. Register user valid (nomor WA valid).
-2. Cek ada row baru di `whatsapp_queue`.
-3. Klik `Proses Queue WhatsApp` di Admin.
-4. Verifikasi status berubah (`sent` / `retry` / `failed`) dan log tercatat.
-
-### E. Self-test internal
-
-Admin dapat menjalankan action:
-
-- `notification_self_test`
-
-Self-test ini memverifikasi:
-
-- invalid phone rejection,
-- valid phone acceptance,
-- retry helper behavior.
+- Jika muncul `Unknown Sender`: verifikasi domain/sender di dashboard Mailketing.
+- Jika muncul `No Credits`: isi ulang credit Mailketing.
+- Jika muncul `Invalid Token`: cek nilai `MAILKETING_API_KEY`.
+- Jika email tidak terkirim tapi API sukses: periksa reputasi recipient dan status blacklist.
