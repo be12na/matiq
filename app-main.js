@@ -1318,6 +1318,22 @@ function App(){
     setAuthNotice(String(msg||"Pendaftaran berhasil. Silakan login untuk melanjutkan."));
     setAuthPage("login");
   }
+
+  function handleResetData(){
+    if(!window.confirm("Apakah Anda yakin ingin menghapus semua data lokal dan memulai dari awal? Tindakan ini tidak dapat dibatalkan."))return;
+    setData(DEF);
+    sd(DEF);
+    setLiveState("local");
+    alert("Data berhasil direset. Silakan refresh atau sync data baru.");
+  }
+
+  function handleResetData(){
+    if(!window.confirm("Apakah Anda yakin ingin menghapus semua data lokal dan memulai dari awal? Tindakan ini tidak dapat dibatalkan."))return;
+    setData(DEF);
+    sd(DEF);
+    setLiveState("local");
+    alert("Data berhasil direset. Silakan refresh atau sync data baru.");
+  }
   
   // Verify token on mount
   useEffect(function(){
@@ -1956,6 +1972,7 @@ function App(){
           ),
           h("div",{className:"row",style:{gap:8,flexWrap:"wrap",justifyContent:"flex-end"}},
             isAdminUser&&h("button",{className:"btnp",onClick:function(){setTab("Import");}},"Import"),
+            hasData&&h("button",{style:{padding:"6px 12px",fontSize:11,border:"1px solid #f97316",color:"#f97316",background:"transparent",cursor:"pointer"},onClick:handleResetData},"Reset Data"),
             h("button",{style:{padding:"6px 12px",fontSize:11},onClick:handleLogout},"Logout")
           )
         )
