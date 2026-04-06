@@ -2014,6 +2014,26 @@ try {
     out(['ok' => true]);
   }
 
+  if ($method === 'POST' && $uriPath === '/app/clear-data') {
+    // Clear all campaign data and notes from database
+    // WARNING: This clears data for ALL users (database is shared state)
+    // Frontend handles local localStorage reset separately
+    try {
+      $db->exec('TRUNCATE TABLE notes');
+    } catch (Throwable $e) {
+      // Table may not exist yet, ignore
+    }
+    try {
+      $db->exec('TRUNCATE TABLE campaigns');
+      $db->exec('TRUNCATE TABLE adsets');
+      $db->exec('TRUNCATE TABLE ads');
+    } catch (Throwable $e) {
+      // Tables may not exist yet, ignore
+    }
+
+    out(['ok' => true, 'message' => 'Data telah direset. Refresh browser untuk melihat data kosong.']);
+  }
+
   if ($method === 'POST' && $uriPath === '/app/ai') {
     fail('AI endpoint belum diaktifkan di mode MySQL PHP', 501);
   }

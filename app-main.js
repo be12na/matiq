@@ -1328,7 +1328,12 @@ function App(){
     setData(DEF);
     sd(DEF);
     setLiveState("local");
-    alert("Data berhasil direset. Silakan refresh atau sync data baru.");
+    // Call server endpoint to clear user's notes from database
+    req("/app/clear-data","POST",{}).then(function(){
+      alert("Data berhasil direset. Silakan refresh atau sync data baru.");
+    }).catch(function(err){
+      alert("Data lokal direset, tapi gagal clear di server (network error). Silakan refresh.");
+    });
   }
   
   // Verify token on mount
