@@ -8,6 +8,8 @@ langchain-docs/
 
 .playwright-mcp/
 creative
+ops/archive/
+ops/runtime-state/
 
 # wrangler files
 .wrangler

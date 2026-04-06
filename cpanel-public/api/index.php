@@ -559,7 +559,20 @@ function buildKpi(PDO $db): array {
 
 $env = loadEnv();
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-$uriPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
+$requestPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
+$uriPath = $requestPath;
+if (strpos($uriPath, '/api/index.php') === 0) {
+  $uriPath = substr($uriPath, strlen('/api/index.php'));
+  if ($uriPath === '') {
+    $uriPath = '/';
+  }
+}
+if (strpos($uriPath, '/index.php') === 0) {
+  $uriPath = substr($uriPath, strlen('/index.php'));
+  if ($uriPath === '') {
+    $uriPath = '/';
+  }
+}
 
 if ($method === 'OPTIONS') {
   http_response_code(204);

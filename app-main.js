@@ -14,7 +14,7 @@ var PUBLIC_RUNTIME_CFG = (typeof window!=="undefined"&&window.__MATIQ_PUBLIC_CON
 var PUBLIC_GAS_WEB_APP_URL = String(PUBLIC_RUNTIME_CFG.gasWebAppUrl||"");
 var PUBLIC_DB_TARGET_SHEET_ID = String(PUBLIC_RUNTIME_CFG.dbTargetSheetId||"");
 var PUBLIC_AUTH_FALLBACK_API_BASE = String(PUBLIC_RUNTIME_CFG.authFallbackApiBase||"");
-var PUBLIC_DEFAULT_API_BASE = String(PUBLIC_RUNTIME_CFG.defaultApiBase||"");
+var PUBLIC_DEFAULT_API_BASE = String(PUBLIC_RUNTIME_CFG.defaultApiBase||"/api/index.php");
 var PUBLIC_DISABLE_LIVE_SYNC = String(PUBLIC_RUNTIME_CFG.disableLiveSync||"").toLowerCase()==="true";
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
 var BRAND = {

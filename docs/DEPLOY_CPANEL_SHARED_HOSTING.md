@@ -39,6 +39,7 @@ Copy juga file frontend:
 
 `runtime-config.php` membaca variabel publik dari file env ini lalu expose ke browser sebagai `window.__MATIQ_PUBLIC_CONFIG__`.
 Pada mode cPanel, `.htaccess` me-rewrite `runtime-config.js` -> `runtime-config.php`, jadi frontend tetap memanggil `runtime-config.js` dengan kompatibilitas lintas environment.
+Jika `.htaccess` tidak aktif di hosting, frontend tetap bisa bekerja karena default API base mengarah ke `/api/index.php` dan router PHP mengenali path `/api/index.php/...` tanpa rewrite.
 
 ## 3) Routing yang harus aktif
 

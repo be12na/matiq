@@ -3,6 +3,7 @@ param(
   [int]$HeartbeatSeconds = 45,
   [int]$ProgressReportSeconds = 300,
   [int]$DriftAuditSeconds = 600,
+  [int]$GroomingIntervalSeconds = 600,
   [int]$ContextWarnPercent = 45,
   [int]$ContextHardPercent = 50,
   [int]$MaxRetries = 3,
@@ -104,13 +105,30 @@ function Release-Lock {
 }
 
 function Select-NextTask {
-  param([hashtable]$Queues)
+  param(
+    [hashtable]$Queues,
+    [string[]]$PausedPriorities = @()
+  )
 
-  if ($Queues.P0.Count -gt 0) { return $Queues.P0.Dequeue() }
-  if ($Queues.P1.Count -gt 0) { return $Queues.P1.Dequeue() }
-  if ($Queues.P2.Count -gt 0) { return $Queues.P2.Dequeue() }
-  if ($Queues.P3.Count -gt 0) { return $Queues.P3.Dequeue() }
+  foreach ($priority in @('P0', 'P1', 'P2', 'P3')) {
+    if ($PausedPriorities -contains $priority) { continue }
+    if ($Queues[$priority].Count -gt 0) { return $Queues[$priority].Dequeue() }
+  }
   return $null
+}
+
+function Invoke-AutoGroom {
+  param(
+    [string]$Workspace,
+    [int]$WarnPercent,
+    [int]$HardPercent
+  )
+
+  $script = Join-Path $Workspace 'ops/auto-groom-context.ps1'
+  if (-not (Test-Path -LiteralPath $script)) { return $false }
+
+  & $script -WorkspacePath $Workspace -Apply -ContextWarnPercent $WarnPercent -ContextHardPercent $HardPercent | Out-Null
+  return $true
 }
 
 $workers = Get-RecommendWorkerCount -Requested $WorkerCount
@@ -148,6 +166,8 @@ Enqueue-Task -Queues $queues -Priority "P3" -Task @{ id = "T-103"; scope = "reso
 
 $lastReport = Get-Date
 $lastDriftAudit = Get-Date
+$lastGrooming = (Get-Date).AddSeconds(-1 * $GroomingIntervalSeconds)
+$pausedPriorities = @()
 
 while ($true) {
   $now = Get-Date
@@ -157,14 +177,18 @@ while ($true) {
   if ($contextPressure -ge $ContextHardPercent) {
     Write-Event -RuntimeDir $runtimeDir -Type "DRIFT_DETECTED" -Agent "coordinator" -TaskId "GLOBAL" -Status "hard-context-limit" -Percent 0 -NextAction "Pause P2/P3, trigger grooming" -Blocker "Context >= hard threshold"
     # Pause lower priorities and trigger P0 grooming task
+    $pausedPriorities = @('P2', 'P3')
     Enqueue-Task -Queues $queues -Priority "P0" -Task @{ id = "T-GROOM-HARD"; scope = "resource:context"; attempt = 1; owner = ""; progress = 0 }
   } elseif ($contextPressure -ge $ContextWarnPercent) {
     Write-Event -RuntimeDir $runtimeDir -Type "TASK_PROGRESS" -Agent "coordinator" -TaskId "GLOBAL" -Status "context-warning" -Percent $contextPressure -NextAction "Run grooming on next slot"
+    $pausedPriorities = @('P3')
+  } else {
+    $pausedPriorities = @()
   }
 
   foreach ($worker in $state.workers) {
     if ([string]::IsNullOrWhiteSpace($worker.current_task)) {
-      $candidate = Select-NextTask -Queues $queues
+      $candidate = Select-NextTask -Queues $queues -PausedPriorities $pausedPriorities
       if ($null -eq $candidate) {
         $worker.status = "idle"
         $worker.last_heartbeat = $now.ToString("s")
@@ -213,6 +237,14 @@ while ($true) {
     $lastReport = $now
   }
 
+  if (($now - $lastGrooming).TotalSeconds -ge $GroomingIntervalSeconds -or $contextPressure -ge $ContextWarnPercent) {
+    $didGroom = Invoke-AutoGroom -Workspace $WorkspacePath -WarnPercent $ContextWarnPercent -HardPercent $ContextHardPercent
+    if ($didGroom) {
+      Write-Event -RuntimeDir $runtimeDir -Type "TASK_PROGRESS" -Agent "coordinator" -TaskId "T-GROOM-PERIODIC" -Status "done" -Percent 100 -NextAction "Context grooming completed"
+    }
+    $lastGrooming = $now
+  }
+
   if (($now - $lastDriftAudit).TotalSeconds -ge $DriftAuditSeconds) {
     $state.last_drift_audit = $now.ToString("s")
     Write-Event -RuntimeDir $runtimeDir -Type "DRIFT_CORRECTED" -Agent "coordinator" -TaskId "GLOBAL" -Status "audit-complete" -Percent 0 -NextAction "Continue dispatch"
@@ -226,6 +258,7 @@ while ($true) {
     P3 = $queues.P3.Count
   }
   $state.lock_count = $locks.Count
+  $state.paused_priorities = $pausedPriorities
 
   $state | ConvertTo-Json -Depth 10 | Out-File -FilePath (Join-Path $runtimeDir "status.json") -Encoding utf8
   Start-Sleep -Seconds $HeartbeatSeconds
