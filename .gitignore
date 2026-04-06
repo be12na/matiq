@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+token-usage-output.txt
+.DS_Store
+Thumbs.db
+langchain-docs/
+
+.playwright-mcp/
+creative
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
