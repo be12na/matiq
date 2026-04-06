@@ -45,6 +45,23 @@ fi
 
 mkdir -p "$DOCROOT_PATH/api"
 
+resolve_source() {
+	local preferred="$1"
+	local fallback="$2"
+
+	if [[ -f "$preferred" ]]; then
+		echo "$preferred"
+		return 0
+	fi
+
+	if [[ -f "$fallback" ]]; then
+		echo "$fallback"
+		return 0
+	fi
+
+	echo ""
+}
+
 echo "[1/4] Updating repository from origin/$BRANCH"
 git -C "$REPO_PATH" fetch origin "$BRANCH"
 git -C "$REPO_PATH" pull --ff-only origin "$BRANCH"
@@ -55,9 +72,18 @@ copy_if_needed "$REPO_PATH/app-main.js" "$DOCROOT_PATH/app-main.js"
 copy_if_needed "$REPO_PATH/runtime-config.js" "$DOCROOT_PATH/runtime-config.js"
 
 echo "[3/4] Syncing cPanel PHP gateway files"
-copy_if_needed "$REPO_PATH/cpanel-public/.htaccess" "$DOCROOT_PATH/.htaccess"
-copy_if_needed "$REPO_PATH/cpanel-public/runtime-config.php" "$DOCROOT_PATH/runtime-config.php"
-copy_if_needed "$REPO_PATH/cpanel-public/api/index.php" "$DOCROOT_PATH/api/index.php"
+HTACCESS_SRC="$(resolve_source "$REPO_PATH/.htaccess" "$REPO_PATH/cpanel-public/.htaccess")"
+RUNTIME_CFG_SRC="$(resolve_source "$REPO_PATH/runtime-config.php" "$REPO_PATH/cpanel-public/runtime-config.php")"
+API_INDEX_SRC="$(resolve_source "$REPO_PATH/api/index.php" "$REPO_PATH/cpanel-public/api/index.php")"
+
+if [[ -z "$HTACCESS_SRC" || -z "$RUNTIME_CFG_SRC" || -z "$API_INDEX_SRC" ]]; then
+	echo "ERROR: gateway source files are missing in both root and cpanel-public paths"
+	exit 1
+fi
+
+copy_if_needed "$HTACCESS_SRC" "$DOCROOT_PATH/.htaccess"
+copy_if_needed "$RUNTIME_CFG_SRC" "$DOCROOT_PATH/runtime-config.php"
+copy_if_needed "$API_INDEX_SRC" "$DOCROOT_PATH/api/index.php"
 
 echo "[4/4] Deploy finished"
 echo "Docroot updated: $DOCROOT_PATH"
