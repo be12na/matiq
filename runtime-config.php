@@ -12,12 +12,41 @@ if ($custom !== false && trim((string)$custom) !== '') {
 }
 $candidates[] = dirname(__DIR__) . '/.env';
 $candidates[] = dirname(__DIR__, 2) . '/.env';
+$candidates[] = dirname(__DIR__) . '/../.env';
+$candidates[] = dirname(__DIR__) . '/../../.env';
+$candidates[] = getenv('HOME') ? rtrim((string)getenv('HOME'), '/\\') . '/.env' : '';
 
 foreach ($candidates as $path) {
-  if (is_file($path)) {
-    $parsed = parse_ini_file($path, false, INI_SCANNER_RAW);
-    if (is_array($parsed)) {
-      $env = $parsed;
+  if (!is_string($path) || $path === '' || !is_file($path)) {
+    continue;
+  }
+
+  $parsed = parse_ini_file($path, false, INI_SCANNER_RAW);
+  if (is_array($parsed)) {
+    $env = $parsed;
+    break;
+  }
+
+  $raw = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+  if (is_array($raw)) {
+    $fallbackEnv = [];
+    foreach ($raw as $line) {
+      $line = trim((string)$line);
+      if ($line === '' || str_starts_with($line, '#') || str_starts_with($line, ';')) {
+        continue;
+      }
+      $parts = explode('=', $line, 2);
+      if (count($parts) !== 2) {
+        continue;
+      }
+      $key = trim($parts[0]);
+      $value = trim($parts[1]);
+      if ($key !== '') {
+        $fallbackEnv[$key] = $value;
+      }
+    }
+    if ($fallbackEnv !== []) {
+      $env = $fallbackEnv;
       break;
     }
   }
