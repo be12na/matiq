@@ -7,7 +7,10 @@ ServerSignature Off
 
   RewriteRule ^runtime-config\.js$ runtime-config.php [L]
 
-  RewriteRule "(^|/)\.(env|git|htaccess|htpasswd|ini|log|bak|sql)" - [F,L,NC]
+  RewriteRule "(^|/)\.(env|git|htaccess|htpasswd|ini|log|bak|sql|key|pem|crt)" - [F,L,NC]
+
+  # Block direct access to sensitive directories
+  RewriteRule ^(database|docs|functions|gas|ops)(/|$) - [F,L,NC]
 
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
@@ -20,5 +23,8 @@ ServerSignature Off
 <IfModule mod_headers.c>
   Header always set X-Content-Type-Options "nosniff"
   Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-XSS-Protection "1; mode=block"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always unset X-Powered-By
+  Header unset X-Powered-By
 </IfModule>

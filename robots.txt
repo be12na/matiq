@@ -1,0 +1,24 @@
+# MATIQ Security - Prevent indexing sensitive documentation
+
+# Block all bots from accessing documentation
+User-agent: *
+Disallow: /docs/
+Disallow: /database/
+Disallow: /functions/
+Disallow: /gas/
+
+# Block specific content files
+Disallow: *.sql
+Disallow: *.env
+Disallow: *.config
+Disallow: .db
+Disallow: .env.local
+Disallow: .env.production
+
+# Allow search engines to see our app
+Allow: /
+Allow: /index.html
+Allow: /app-main.js
+
+# Crawl delay
+Crawl-delay: 1
