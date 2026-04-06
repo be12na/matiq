@@ -1,10 +1,10 @@
-# Integrasi Email Mailketing (Spec Resmi API)
+# Integrasi Notifikasi Mailketing + Starsender
 
-Dokumen ini mengunci kontrak integrasi email berdasarkan dokumentasi resmi:
+Dokumen ini mengunci kontrak integrasi notifikasi backend PHP/MySQL (cPanel) berdasarkan dokumentasi resmi:
 
-- https://mailketing.co.id/docs/send-email-via-api/
-
-Fokus dokumen ini adalah mode backend PHP/MySQL pada cPanel (bukan Apps Script).
+- Mailketing email API: [mailketing.co.id/docs/send-email-via-api](https://mailketing.co.id/docs/send-email-via-api/)
+- Starsender docs home: [docs.starsender.online/docs/home](https://docs.starsender.online/docs/home)
+- Starsender kirim pesan: [docs.starsender.online/docs/message-api/kirim-pesan](https://docs.starsender.online/docs/message-api/kirim-pesan)
 
 ## 1) Endpoint resmi Mailketing
 
@@ -49,7 +49,31 @@ Contoh response gagal dari docs resmi:
 - `Empty Subject, Please Add Subject Email`
 - `Empty Content, Please Add Email Content`
 
-## 3) Konfigurasi .env (server cPanel)
+## 3) Endpoint resmi Starsender (WhatsApp)
+
+- URL: `https://api.starsender.online/api/send`
+- Method: `POST`
+- Body format: `application/json`
+- Header wajib:
+- `Authorization: <DEVICE_API_KEY>`
+- `Content-Type:application/json`
+
+Parameter request (sesuai docs Starsender):
+
+- `messageType` (wajib): `text` atau `media`
+- `to` (wajib): nomor tujuan, bisa awalan `0` atau kode negara
+- `body` (opsional): isi pesan
+- `file` (opsional): URL file untuk pesan media
+- `delay` (opsional): delay kirim (detik)
+- `schedule` (opsional): jadwal kirim (unix milliseconds)
+
+Contoh response sukses:
+
+```json
+{"success":true,"data":{},"message":"Success sent message"}
+```
+
+## 4) Konfigurasi .env (server cPanel)
 
 Minimal konfigurasi untuk email API:
 
@@ -64,9 +88,18 @@ Opsional:
 - `NOTIFICATION_RETRY_MAX=3`
 - `NOTIFICATION_RETRY_DELAY_MS=1200`
 
+Minimal konfigurasi untuk WhatsApp API:
+
+- `STARSENDER_API_URL=https://api.starsender.online/api/send`
+- `STARSENDER_API_KEY=...` (Device API Key sesuai docs Starsender)
+
+Opsional:
+
+- `STARSENDER_TIMEOUT_MS=15000`
+
 Semua variabel di atas harus disimpan di `.env` server (di luar source control).
 
-## 4) Mapping payload backend -> Mailketing
+## 5) Mapping payload backend -> provider
 
 Backend wajib mengirim payload ke Mailketing dengan mapping berikut:
 
@@ -77,7 +110,16 @@ Backend wajib mengirim payload ke Mailketing dengan mapping berikut:
 - `subject` <- subject notifikasi
 - `content` <- isi notifikasi
 
-## 5) Validasi integrasi produksi
+Mapping WhatsApp queue -> Starsender:
+
+- `messageType` <- `message_payload.messageType` (default: `text`)
+- `to` <- `whatsapp_queue.phone_number`
+- `body` <- `message_payload.body` / `message_payload.message`
+- `file` <- `message_payload.file` (jika tipe `media`)
+- `delay` <- `message_payload.delay` (opsional)
+- `schedule` <- `message_payload.schedule` (opsional)
+
+## 6) Validasi integrasi produksi
 
 Checklist verifikasi:
 
@@ -86,10 +128,13 @@ Checklist verifikasi:
 3. API key valid dan memiliki credit.
 4. Saat sukses, status log internal disimpan sebagai `sent`.
 5. Saat gagal (`status=failed`), backend menyimpan error message dari field `response` untuk debug.
+6. Queue WhatsApp saat gagal harus berubah ke `retry`/`failed` sesuai `attempt_count` dan `max_attempts`.
 
-## 6) Troubleshooting cepat
+## 7) Troubleshooting cepat
 
 - Jika muncul `Unknown Sender`: verifikasi domain/sender di dashboard Mailketing.
 - Jika muncul `No Credits`: isi ulang credit Mailketing.
 - Jika muncul `Invalid Token`: cek nilai `MAILKETING_API_KEY`.
 - Jika email tidak terkirim tapi API sukses: periksa reputasi recipient dan status blacklist.
+- Jika WA gagal kirim: cek `STARSENDER_API_KEY` adalah Device API Key, bukan Account/Profile API Key.
+- Jika WA gagal untuk media: pastikan `messageType=media` dan `file` berupa URL publik yang valid.

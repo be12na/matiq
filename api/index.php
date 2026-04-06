@@ -625,6 +625,187 @@ function tableHasColumn(PDO $db, string $table, string $column): bool {
   return $exists;
 }
 
+function starsenderDelaySeconds(array $env): int {
+  $delayMs = (int)envGet($env, 'NOTIFICATION_RETRY_DELAY_MS', '1200');
+  if ($delayMs < 1000) {
+    $delayMs = 1000;
+  }
+  return (int)max(1, ceil($delayMs / 1000));
+}
+
+function sendWhatsappViaStarsender(array $env, array $queueItem): array {
+  $apiUrl = trim(envGet($env, 'STARSENDER_API_URL', 'https://api.starsender.online/api/send'));
+  $apiKey = trim(envGet($env, 'STARSENDER_API_KEY', ''));
+  $timeoutMs = (int)envGet($env, 'STARSENDER_TIMEOUT_MS', '15000');
+  if ($timeoutMs < 1000) {
+    $timeoutMs = 15000;
+  }
+
+  if ($apiKey === '') {
+    return [
+      'ok' => false,
+      'http_status' => 0,
+      'provider_message_id' => '',
+      'error' => 'STARSENDER_API_KEY belum dikonfigurasi',
+      'response_excerpt' => '',
+    ];
+  }
+
+  $to = trim((string)($queueItem['phone_number'] ?? ''));
+  if ($to === '') {
+    return [
+      'ok' => false,
+      'http_status' => 0,
+      'provider_message_id' => '',
+      'error' => 'Nomor WhatsApp kosong',
+      'response_excerpt' => '',
+    ];
+  }
+
+  $payload = [];
+  $rawPayload = (string)($queueItem['message_payload'] ?? '');
+  if ($rawPayload !== '') {
+    $decoded = json_decode($rawPayload, true);
+    if (is_array($decoded)) {
+      $payload = $decoded;
+    }
+  }
+
+  $messageType = strtolower(trim((string)($payload['messageType'] ?? 'text')));
+  if (!in_array($messageType, ['text', 'media'], true)) {
+    $messageType = 'text';
+  }
+  $body = trim((string)($payload['body'] ?? ($payload['message'] ?? '')));
+  $file = trim((string)($payload['file'] ?? ''));
+  if ($messageType === 'text' && $body === '') {
+    $body = 'Notifikasi MATIQ';
+  }
+  if ($messageType === 'media' && $file === '') {
+    return [
+      'ok' => false,
+      'http_status' => 0,
+      'provider_message_id' => '',
+      'error' => 'messageType media membutuhkan field file URL',
+      'response_excerpt' => '',
+    ];
+  }
+
+  $requestBody = [
+    'messageType' => $messageType,
+    'to' => $to,
+  ];
+  if ($body !== '') {
+    $requestBody['body'] = $body;
+  }
+  if ($file !== '') {
+    $requestBody['file'] = $file;
+  }
+  if (isset($payload['delay'])) {
+    $requestBody['delay'] = (int)$payload['delay'];
+  }
+  if (isset($payload['schedule'])) {
+    $requestBody['schedule'] = (int)$payload['schedule'];
+  }
+
+  $ch = curl_init();
+  curl_setopt_array($ch, [
+    CURLOPT_URL => $apiUrl,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_ENCODING => '',
+    CURLOPT_MAXREDIRS => 5,
+    CURLOPT_TIMEOUT_MS => $timeoutMs,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+    CURLOPT_CUSTOMREQUEST => 'POST',
+    CURLOPT_POSTFIELDS => json_encode($requestBody, JSON_UNESCAPED_SLASHES),
+    CURLOPT_HTTPHEADER => [
+      'Content-Type:application/json',
+      'Authorization: ' . $apiKey,
+    ],
+  ]);
+
+  $responseRaw = curl_exec($ch);
+  $httpStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  $curlError = curl_error($ch);
+  curl_close($ch);
+
+  $decoded = [];
+  if (is_string($responseRaw) && $responseRaw !== '') {
+    $json = json_decode($responseRaw, true);
+    if (is_array($json)) {
+      $decoded = $json;
+    }
+  }
+
+  $providerMessageId = '';
+  if (isset($decoded['data']) && is_array($decoded['data'])) {
+    $providerMessageId = (string)($decoded['data']['id'] ?? ($decoded['data']['messageId'] ?? ''));
+  }
+
+  $success = ($httpStatus >= 200 && $httpStatus < 300 && ($decoded['success'] ?? false) === true);
+  $responseMessage = (string)($decoded['message'] ?? '');
+  $responseExcerpt = is_string($responseRaw) ? substr($responseRaw, 0, 450) : '';
+  $err = '';
+  if (!$success) {
+    if ($curlError !== '') {
+      $err = 'cURL: ' . $curlError;
+    } elseif ($responseMessage !== '') {
+      $err = $responseMessage;
+    } else {
+      $err = 'Starsender request gagal';
+    }
+  }
+
+  return [
+    'ok' => $success,
+    'http_status' => $httpStatus,
+    'provider_message_id' => $providerMessageId,
+    'error' => $err,
+    'response_excerpt' => $responseExcerpt,
+  ];
+}
+
+function logNotification(
+  PDO $db,
+  string $eventType,
+  string $channel,
+  string $recipient,
+  string $status,
+  int $attempt,
+  string $provider,
+  int $httpStatus,
+  string $errorMessage,
+  string $responseExcerpt,
+  string $queueId,
+  string $userId
+): void {
+  try {
+    $stmt = $db->prepare(
+      'INSERT INTO notification_logs (id, event_type, channel, recipient, status, attempt, provider, http_status, error_message, response_excerpt, queue_id, user_id, created_at, updated_at)
+       VALUES (:id, :event_type, :channel, :recipient, :status, :attempt, :provider, :http_status, :error_message, :response_excerpt, :queue_id, :user_id, :created_at, :updated_at)'
+    );
+    $now = utcNowMs();
+    $stmt->execute([
+      ':id' => randomId('nlog_', 12),
+      ':event_type' => $eventType,
+      ':channel' => $channel,
+      ':recipient' => $recipient,
+      ':status' => $status,
+      ':attempt' => $attempt,
+      ':provider' => $provider,
+      ':http_status' => $httpStatus > 0 ? (string)$httpStatus : null,
+      ':error_message' => $errorMessage !== '' ? substr($errorMessage, 0, 500) : null,
+      ':response_excerpt' => $responseExcerpt !== '' ? $responseExcerpt : null,
+      ':queue_id' => $queueId !== '' ? $queueId : null,
+      ':user_id' => $userId !== '' ? $userId : null,
+      ':created_at' => $now,
+      ':updated_at' => $now,
+    ]);
+  } catch (Throwable $e) {
+    // Logging errors should not break main notification flow.
+  }
+}
+
 $env = loadEnv();
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $requestPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
@@ -1011,7 +1192,7 @@ try {
     }
 
     $stmt = $db->prepare(
-      "SELECT queue_id
+      "SELECT queue_id, user_id, email, phone_number, message_payload, status, attempt_count, max_attempts
        FROM whatsapp_queue
        WHERE status IN ('pending', 'retry')
          AND next_retry_at <= :now
@@ -1030,13 +1211,97 @@ try {
     foreach ($items as $it) {
       $processed++;
       $qid = (string)$it['queue_id'];
-      $upd = $db->prepare(
-        "UPDATE whatsapp_queue
-         SET status = 'sent', attempt_count = attempt_count + 1, updated_at = :updated_at
-         WHERE queue_id = :queue_id"
+      $attempt = ((int)($it['attempt_count'] ?? 0)) + 1;
+      $maxAttempts = max(1, (int)($it['max_attempts'] ?? 3));
+      $recipient = (string)($it['phone_number'] ?? '');
+      $res = sendWhatsappViaStarsender($env, $it);
+      $nowRun = utcNowMs();
+
+      if ($res['ok']) {
+        $fields = [
+          'status = :status',
+          'attempt_count = :attempt_count',
+          'updated_at = :updated_at',
+        ];
+        $params = [
+          ':status' => 'sent',
+          ':attempt_count' => $attempt,
+          ':updated_at' => $nowRun,
+          ':queue_id' => $qid,
+        ];
+        if (tableHasColumn($db, 'whatsapp_queue', 'provider_message_id')) {
+          $fields[] = 'provider_message_id = :provider_message_id';
+          $params[':provider_message_id'] = (string)($res['provider_message_id'] ?? '');
+        }
+        if (tableHasColumn($db, 'whatsapp_queue', 'last_error')) {
+          $fields[] = 'last_error = :last_error';
+          $params[':last_error'] = null;
+        }
+        $upd = $db->prepare('UPDATE whatsapp_queue SET ' . implode(', ', $fields) . ' WHERE queue_id = :queue_id');
+        $upd->execute($params);
+        $sent++;
+
+        logNotification(
+          $db,
+          'whatsapp_queue_process',
+          'whatsapp',
+          $recipient,
+          'sent',
+          $attempt,
+          'starsender',
+          (int)($res['http_status'] ?? 0),
+          '',
+          (string)($res['response_excerpt'] ?? ''),
+          $qid,
+          (string)($it['user_id'] ?? '')
+        );
+        continue;
+      }
+
+      $canRetry = $attempt < $maxAttempts;
+      $nextStatus = $canRetry ? 'retry' : 'failed';
+      if ($canRetry) {
+        $retried++;
+      } else {
+        $failed++;
+      }
+
+      $fields = [
+        'status = :status',
+        'attempt_count = :attempt_count',
+        'updated_at = :updated_at',
+      ];
+      $params = [
+        ':status' => $nextStatus,
+        ':attempt_count' => $attempt,
+        ':updated_at' => $nowRun,
+        ':queue_id' => $qid,
+      ];
+      if (tableHasColumn($db, 'whatsapp_queue', 'last_error')) {
+        $fields[] = 'last_error = :last_error';
+        $params[':last_error'] = substr((string)($res['error'] ?? 'Unknown error'), 0, 500);
+      }
+      if ($canRetry && tableHasColumn($db, 'whatsapp_queue', 'next_retry_at')) {
+        $fields[] = 'next_retry_at = :next_retry_at';
+        $params[':next_retry_at'] = utcNow()->modify('+' . starsenderDelaySeconds($env) . ' seconds')->format('Y-m-d H:i:s.v');
+      }
+      $upd = $db->prepare('UPDATE whatsapp_queue SET ' . implode(', ', $fields) . ' WHERE queue_id = :queue_id');
+      $upd->execute($params);
+
+      logNotification(
+        $db,
+        'whatsapp_queue_process',
+        'whatsapp',
+        $recipient,
+        $nextStatus,
+        $attempt,
+        'starsender',
+        (int)($res['http_status'] ?? 0),
+        (string)($res['error'] ?? ''),
+        (string)($res['response_excerpt'] ?? ''),
+        $qid,
+        (string)($it['user_id'] ?? '')
       );
-      $upd->execute([':updated_at' => utcNowMs(), ':queue_id' => $qid]);
-      $sent++;
     }
 
     out(['ok' => true, 'data' => ['processed' => $processed, 'sent' => $sent, 'retried' => $retried, 'failed' => $failed]]);
