@@ -1509,9 +1509,13 @@ function App(){
     return req("/app/snapshot","GET").then(function(json){
       var mapped=mapSnapshotToLocalData(json.data||{});
       setData(mapped);
+      sd(mapped);
       setLiveState("live");
       setLiveMsg("Live sync aktif");
     }).catch(function(err){
+      // Prevent stale/local dummy data from lingering when live sync fails.
+      setData(DEF);
+      sd(DEF);
       setLiveState("local");
       if(showMsg){
         var msg=sanitizePublicError(err&&err.message?err.message:"");
@@ -1536,7 +1540,7 @@ function App(){
   
   var canAccessProtected=userAccess==="admin"||userAccess==="full";
   var isAdminUser=userAccess==="admin";
-  var canAccessDummyData=isAdminUser;
+  var isDashboardOnlyUser=userAccess==="limited";
   
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER AUTH SCREENS
@@ -1564,6 +1568,11 @@ function App(){
   // Access denied for non-paid users on protected tabs
   var protectedTabs=["AI","Periode","Brief","Analitik"];
   var adminOnlyTabs=["Import","Settings","Admin"];
+
+  if(isDashboardOnlyUser&&tab!=="Dashboard"){
+    setTab("Dashboard");
+    return null;
+  }
   
   if(protectedTabs.indexOf(tab)>=0&&!canAccessProtected){
     return h(AccessDeniedPage,{reason:"limited",user:currentUser,onLogout:handleLogout});
@@ -1649,18 +1658,6 @@ function App(){
         setTab("Rekomendasi");
       });
     });
-  }
-
-  function handleResetDummyData(){
-    if(!canAccessDummyData){
-      setLiveMsg("Akses ditolak: Data Dummy hanya untuk admin.");
-      return;
-    }
-    if(confirm("Hapus semua data?")){
-      setData(DEF);
-      sd(DEF);
-      setLiveMsg("Data Dummy direset.");
-    }
   }
 
   function buildExportButton(reportKey,label,onClick,disabled){
@@ -1972,6 +1969,7 @@ function App(){
     h("div",{className:"tabs"},tabEls.filter(function(el){
       // Hide Admin tab for non-admins, hide Import/Settings for limited users
       var t=el.key;
+      if(isDashboardOnlyUser&&t!=="Dashboard")return false;
       if(t==="Admin"&&!isAdminUser)return false;
       if((t==="Import")&&!isAdminUser)return false;
       return true;
@@ -2030,11 +2028,11 @@ function App(){
       ),
 
       !hasData&&h("div",{style:{color:"#888",fontSize:13,padding:"16px 0"}},"Belum ada data. Klik Import untuk upload CSV dari Meta Ads."),
-      urgentCount>0&&h("div",{className:"card",style:{borderLeft:"3px solid #e24b4a",cursor:"pointer"},onClick:function(){setTab("Rekomendasi");}},
+      urgentCount>0&&h("div",{className:"card",style:{borderLeft:"3px solid #e24b4a",cursor:isDashboardOnlyUser?"default":"pointer"},onClick:isDashboardOnlyUser?null:function(){setTab("Rekomendasi");}},
         h("div",{style:{fontWeight:500,color:"#993c1d"}},"Butuh aksi segera: "+urgentCount+" item"),
         h("div",{style:{fontSize:12,color:"#888",marginTop:4}},"Lihat rekomendasi ->")
       ),
-      alertCount>0&&h("div",{className:"card",style:{borderLeft:"3px solid #ba7517",cursor:"pointer"},onClick:function(){setTab("Alert");}},
+      alertCount>0&&h("div",{className:"card",style:{borderLeft:"3px solid #ba7517",cursor:isDashboardOnlyUser?"default":"pointer"},onClick:isDashboardOnlyUser?null:function(){setTab("Alert");}},
         h("div",{style:{fontWeight:500,color:"#854f0b"}},"Alert threshold: "+alertCount+" item"),
         h("div",{style:{fontSize:12,color:"#888",marginTop:4}},"Lihat alert ->")
       )
@@ -2391,10 +2389,6 @@ function App(){
           h("button",{className:"btnp",onClick:function(){saicfg(aiCfg);setLiveMsg("Konfigurasi AI tersimpan.");}},"Simpan"),
           h("span",{style:{fontSize:12,color:"#0f6e56"}},"Tersimpan lokal")
         )
-      ),
-      canAccessDummyData&&h("div",{className:"card"},
-        h("div",{style:{fontWeight:500,marginBottom:8}},"Reset Data Dummy"),
-        h("button",{style:{color:"#993c1d"},onClick:handleResetDummyData},"Reset Semua Data Dummy")
       ),
       h("div",{className:"footer-brand"},
         h("div",null,BRAND.header),
