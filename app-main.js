@@ -1297,6 +1297,8 @@ function App(){
   var st22=useState(0),rekomendasiPageItems=st22[0],setRekomendasiPageItems=st22[1];
   var ITEMS_PER_PAGE_CAMPAIGN=20;
   var ITEMS_PER_PAGE_RECS=15;
+
+  var fRefs={campaign:useRef(),adset:useRef(),ad:useRef(),periodA:useRef(),periodB:useRef()};
   
   // ─────────────────────────────────────────────────────────────────────────
   // AUTH HANDLERS
