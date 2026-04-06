@@ -1568,11 +1568,6 @@ function App(){
   // Access denied for non-paid users on protected tabs
   var protectedTabs=["AI","Periode","Brief","Analitik"];
   var adminOnlyTabs=["Import","Settings","Admin"];
-
-  if(isDashboardOnlyUser&&tab!=="Dashboard"){
-    setTab("Dashboard");
-    return null;
-  }
   
   if(protectedTabs.indexOf(tab)>=0&&!canAccessProtected){
     return h(AccessDeniedPage,{reason:"limited",user:currentUser,onLogout:handleLogout});
@@ -1967,9 +1962,8 @@ function App(){
       )
     ),
     h("div",{className:"tabs"},tabEls.filter(function(el){
-      // Hide Admin tab for non-admins, hide Import/Settings for limited users
+      // Hide Admin tab for non-admins, hide Import/Settings for non-admins
       var t=el.key;
-      if(isDashboardOnlyUser&&t!=="Dashboard")return false;
       if(t==="Admin"&&!isAdminUser)return false;
       if((t==="Import")&&!isAdminUser)return false;
       return true;
