@@ -348,7 +348,8 @@ function normApiBase(v){
   var s=String(v||"").trim();
   if(!s)return "";
   if(/^https?:\/\//i.test(s))return s.replace(/\/$/,"");
-  return "";
+  if(s.charAt(0)!=="/")return "";
+  return s.replace(/\/$/,"");
 }
 
 function detectApiBase(){
