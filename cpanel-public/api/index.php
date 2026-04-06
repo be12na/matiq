@@ -1128,7 +1128,7 @@ try {
     }
 
     try {
-      $waBody = "Halo {$name}, pendaftaran MATIQ berhasil. Silakan login menggunakan email {$email}.";
+      $waBody = "Halo {$name}! 🎉 Selamat, akun MATIQ kamu udah siap! \n\nLogin di sini pake email {$email} dan mulai pantau campaign Meta Ads-mu. Dashboard ini bakal jadi temen terbaik buat ambil keputusan yang lebih smart. \n\nSiap? Mari kita scale! 🚀";
       $waPayload = [
         'messageType' => 'text',
         'to' => $wa,
@@ -1387,7 +1387,7 @@ try {
     $contact = $contactStmt->fetch(PDO::FETCH_ASSOC);
 
     $resetLink = getDomain() . '/reset-password?token=' . $resetToken;
-    $waBody = "Halo {$user['name']}, kami menerima permintaan untuk reset password akun Matiq Anda. Gunakan link berikut untuk reset: {$resetLink}\n\nLink berlaku selama 2 jam. Jika Anda tidak melakukan permintaan ini, abaikan pesan ini.";
+    $waBody = "Halo {$user['name']}! 🔐 Kami terima request untuk reset password MATIQ kamu. \n\nTap link ini buat buat password baru: \n{$resetLink} \n\n⏱️ Link berlaku 2 jam doang! Kalo bukan kamu yang request, abaikan aja pesan ini, aman kok.";
 
     // Queue WhatsApp message if contact exists
     if ($contact && $contact['phone_number']) {
