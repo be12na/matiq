@@ -598,6 +598,33 @@ function buildKpi(PDO $db): array {
   ];
 }
 
+function tableHasColumn(PDO $db, string $table, string $column): bool {
+  static $cache = [];
+  $tableKey = strtolower($table);
+  $columnKey = strtolower($column);
+  if (isset($cache[$tableKey][$columnKey])) {
+    return $cache[$tableKey][$columnKey];
+  }
+
+  $stmt = $db->prepare(
+    'SELECT COUNT(*)
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = :table_name
+       AND column_name = :column_name'
+  );
+  $stmt->execute([
+    ':table_name' => $table,
+    ':column_name' => $column,
+  ]);
+  $exists = ((int)$stmt->fetchColumn() > 0);
+  if (!isset($cache[$tableKey])) {
+    $cache[$tableKey] = [];
+  }
+  $cache[$tableKey][$columnKey] = $exists;
+  return $exists;
+}
+
 $env = loadEnv();
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $requestPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?: '/');
@@ -1217,9 +1244,15 @@ try {
       ];
     }
 
-    $notes = $db->query('SELECT id, entity_level, entity_name, note_text, updated_at FROM notes ORDER BY updated_at DESC')->fetchAll();
+    $notesSql = tableHasColumn($db, 'notes', 'id')
+      ? 'SELECT id, entity_level, entity_name, note_text, updated_at FROM notes ORDER BY updated_at DESC'
+      : 'SELECT entity_level, entity_name, note_text, updated_at FROM notes ORDER BY updated_at DESC';
+    $notes = $db->query($notesSql)->fetchAll();
     $settings = $db->query('SELECT key_name, key_value FROM settings ORDER BY key_name ASC')->fetchAll();
-    $importLogs = $db->query('SELECT id, import_batch_id, level, file_name, row_count, imported_at, status, message FROM import_logs ORDER BY imported_at DESC LIMIT 100')->fetchAll();
+    $importLogs = [];
+    if (tableHasColumn($db, 'import_logs', 'id')) {
+      $importLogs = $db->query('SELECT id, import_batch_id, level, file_name, row_count, imported_at, status, message FROM import_logs ORDER BY imported_at DESC LIMIT 100')->fetchAll();
+    }
 
     out([
       'ok' => true,
