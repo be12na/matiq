@@ -62,8 +62,30 @@ resolve_source() {
 	echo ""
 }
 
+backup_untracked_conflicts() {
+	local backup_root="$REPO_PATH/.deploy-backup/pre-pull-$(date +%Y%m%d-%H%M%S)"
+	local moved=0
+	local path status dest_dir
+
+	for path in ".htaccess" "api/index.php" "runtime-config.php"; do
+		status="$(git -C "$REPO_PATH" status --porcelain --untracked-files=all -- "$path" | head -n 1 || true)"
+		if [[ "$status" == \?\?* ]]; then
+			dest_dir="$backup_root/$(dirname "$path")"
+			mkdir -p "$dest_dir"
+			mv -f "$REPO_PATH/$path" "$dest_dir/"
+			echo "BACKUP: moved untracked $path to $dest_dir/"
+			moved=1
+		fi
+	done
+
+	if [[ $moved -eq 1 ]]; then
+		echo "Backup complete: $backup_root"
+	fi
+}
+
 echo "[1/4] Updating repository from origin/$BRANCH"
 git -C "$REPO_PATH" fetch origin "$BRANCH"
+backup_untracked_conflicts
 git -C "$REPO_PATH" pull --ff-only origin "$BRANCH"
 
 echo "[2/4] Syncing frontend files"
