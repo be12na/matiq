@@ -1304,9 +1304,9 @@ try {
       fail('Email dan password wajib diisi', 400);
     }
 
-    $stmt = $db->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
-    $stmt->execute([':email' => $email]);
-    $user = $stmt->fetch();
+    $selectStmt = $db->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
+    $selectStmt->execute([':email' => $email]);
+    $user = $selectStmt->fetch();
     if (!$user) {
       fail('Email atau password salah', 401);
     }
@@ -1318,13 +1318,13 @@ try {
       fail('Email atau password salah', 401);
     }
 
-    $upd = $db->prepare('UPDATE users SET last_login = :last_login, updated_at = :updated_at WHERE id = :id');
+    $updateStmt = $db->prepare('UPDATE users SET last_login = :last_login, updated_at = :updated_at WHERE id = :id');
     $now = utcNowMs();
-    $upd->execute([':last_login' => $now, ':updated_at' => $now, ':id' => $user['id']]);
+    $updateStmt->execute([':last_login' => $now, ':updated_at' => $now, ':id' => $user['id']]);
 
-    $stmt = $db->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');
-    $stmt->execute([':id' => $user['id']]);
-    $fresh = $stmt->fetch();
+    $freshSelectStmt = $db->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');
+    $freshSelectStmt->execute([':id' => $user['id']]);
+    $fresh = $freshSelectStmt->fetch();
     $token = issueSession($db, $fresh, (int)envGet($env, 'AUTH_TOKEN_TTL_HOURS', '24'));
 
     out(['ok' => true, 'token' => $token, 'user' => userToPublic($fresh)]);
@@ -1344,8 +1344,8 @@ try {
 
   if ($method === 'POST' && $uriPath === '/auth/logout') {
     $current = requireAuth($db, $payload);
-    $stmt = $db->prepare('UPDATE sessions SET is_revoked = 1 WHERE token_id = :token_id');
-    $stmt->execute([':token_id' => $current['__token']]);
+    $revokeStmt = $db->prepare('UPDATE sessions SET is_revoked = 1 WHERE token_id = :token_id');
+    $revokeStmt->execute([':token_id' => $current['__token']]);
     out(['ok' => true]);
   }
 
