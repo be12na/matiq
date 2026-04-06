@@ -194,6 +194,12 @@ function normalizeEmail(string $email): string {
   return strtolower(trim($email));
 }
 
+function getDomain(): string {
+  $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http';
+  $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+  return $protocol . '://' . $host;
+}
+
 function normalizeWa(string $input): string {
   $digits = preg_replace('/[^0-9]/', '', $input);
   $digits = is_string($digits) ? $digits : '';
@@ -1331,6 +1337,167 @@ try {
     $stmt = $db->prepare('UPDATE sessions SET is_revoked = 1 WHERE token_id = :token_id');
     $stmt->execute([':token_id' => $current['__token']]);
     out(['ok' => true]);
+  }
+
+  if ($method === 'POST' && $uriPath === '/auth/forgot-password') {
+    $email = normalizeEmail((string)($payload['email'] ?? ''));
+    
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      fail('Format email tidak valid', 400);
+    }
+
+    $userStmt = $db->prepare('SELECT id, email, name FROM users WHERE email = :email LIMIT 1');
+    $userStmt->execute([':email' => $email]);
+    $user = $userStmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$user) {
+      // For security, don't reveal if email exists - just say success
+      out(['ok' => true, 'message' => 'Jika email terdaftar, Anda akan menerima link reset password.']);
+      return;
+    }
+
+    // Generate reset token
+    $resetToken = bin2hex(random_bytes(32));
+    $hashedToken = hash_hmac('sha256', $resetToken, 'password_reset_secret', false);
+    $tokenId = randomId('prt_', 16);
+    $now = utcNowMs();
+    $expiresAt = date('Y-m-d H:i:s.u', (time() + (2 * 60 * 60)) * 1000); // 2 hours from now
+
+    // Invalidate old tokens for this user
+    $invalidateStmt = $db->prepare('UPDATE password_reset_tokens SET is_used = 1 WHERE user_id = :user_id AND is_used = 0');
+    $invalidateStmt->execute([':user_id' => $user['id']]);
+
+    // Insert new reset token
+    $insertStmt = $db->prepare(
+      'INSERT INTO password_reset_tokens (token_id, user_id, email, token, expires_at, is_used, created_at)
+       VALUES (:token_id, :user_id, :email, :token, :expires_at, 0, :created_at)'
+    );
+    $insertStmt->execute([
+      ':token_id' => $tokenId,
+      ':user_id' => $user['id'],
+      ':email' => $email,
+      ':token' => $hashedToken,
+      ':expires_at' => $expiresAt,
+      ':created_at' => $now,
+    ]);
+
+    // Try to get user contact for WhatsApp
+    $contactStmt = $db->prepare('SELECT phone_number FROM user_contacts WHERE user_id = :user_id LIMIT 1');
+    $contactStmt->execute([':user_id' => $user['id']]);
+    $contact = $contactStmt->fetch(PDO::FETCH_ASSOC);
+
+    $resetLink = getDomain() . '/reset-password?token=' . $resetToken;
+    $waBody = "Halo {$user['name']}, kami menerima permintaan untuk reset password akun Matiq Anda. Gunakan link berikut untuk reset: {$resetLink}\n\nLink berlaku selama 2 jam. Jika Anda tidak melakukan permintaan ini, abaikan pesan ini.";
+
+    // Queue WhatsApp message if contact exists
+    if ($contact && $contact['phone_number']) {
+      try {
+        $waPayload = [
+          'messageType' => 'text',
+          'to' => $contact['phone_number'],
+          'body' => $waBody,
+        ];
+        $queueId = randomId('waq_', 12);
+        $maxAttempts = max(1, (int)envGet($env, 'NOTIFICATION_RETRY_MAX', '3'));
+        $qins = $db->prepare(
+          'INSERT INTO whatsapp_queue (queue_id, user_id, email, phone_number, message_type, message_payload, status, attempt_count, max_attempts, next_retry_at, created_at, updated_at)
+           VALUES (:queue_id, :user_id, :email, :phone_number, :message_type, :message_payload, :status, :attempt_count, :max_attempts, :next_retry_at, :created_at, :updated_at)'
+        );
+        $qins->execute([
+          ':queue_id' => $queueId,
+          ':user_id' => $user['id'],
+          ':email' => $email,
+          ':phone_number' => $contact['phone_number'],
+          ':message_type' => 'password_reset',
+          ':message_payload' => json_encode($waPayload, JSON_UNESCAPED_SLASHES),
+          ':status' => 'pending',
+          ':attempt_count' => 0,
+          ':max_attempts' => $maxAttempts,
+          ':next_retry_at' => $now,
+          ':created_at' => $now,
+          ':updated_at' => $now,
+        ]);
+      } catch (Throwable $e) {
+        // Log but don't fail - WhatsApp is optional
+        error_log('Failed to queue password reset WhatsApp: ' . $e->getMessage());
+      }
+    }
+
+    out(['ok' => true, 'message' => 'Jika email terdaftar, Anda akan menerima link reset password.']);
+  }
+
+  if ($method === 'POST' && $uriPath === '/auth/reset-password') {
+    $resetToken = (string)($payload['token'] ?? '');
+    $newPassword = (string)($payload['password'] ?? '');
+
+    if (!$resetToken) {
+      fail('Token tidak ditemukan', 400);
+    }
+    if (!$newPassword) {
+      fail('Password baru wajib diisi', 400);
+    }
+    if (strlen($newPassword) < 8 || preg_match('/[0-9]/', $newPassword) !== 1) {
+      fail('Password minimal 8 karakter dan wajib mengandung angka', 400);
+    }
+
+    // Hash the provided token to compare with stored hash
+    $hashedToken = hash_hmac('sha256', $resetToken, 'password_reset_secret', false);
+    
+    // Find the reset token
+    $tokenStmt = $db->prepare(
+      'SELECT token_id, user_id, email, expires_at, is_used 
+       FROM password_reset_tokens 
+       WHERE token = :token LIMIT 1'
+    );
+    $tokenStmt->execute([':token' => $hashedToken]);
+    $resetRecord = $tokenStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$resetRecord) {
+      fail('Link reset tidak valid atau telah kadaluarsa', 400);
+    }
+
+    // Check if token is expired
+    $expiryTime = strtotime($resetRecord['expires_at']);
+    if ($expiryTime < time()) {
+      fail('Link reset telah kadaluarsa. Silakan minta link reset baru.', 400);
+    }
+
+    // Check if token already used
+    if ($resetRecord['is_used']) {
+      fail('Link reset telah digunakan. Silakan minta link reset baru.', 400);
+    }
+
+    // Update password
+    $salt = bin2hex(random_bytes(16));
+    $newHash = password_hash($newPassword, PASSWORD_BCRYPT);
+    $now = utcNowMs();
+
+    $updateStmt = $db->prepare(
+      'UPDATE users SET password_hash = :password_hash, salt = :salt, updated_at = :updated_at 
+       WHERE id = :user_id'
+    );
+    $updateStmt->execute([
+      ':password_hash' => $newHash,
+      ':salt' => $salt,
+      ':user_id' => $resetRecord['user_id'],
+      ':updated_at' => $now,
+    ]);
+
+    // Mark token as used
+    $usedStmt = $db->prepare(
+      'UPDATE password_reset_tokens SET is_used = 1, used_at = :used_at 
+       WHERE token_id = :token_id'
+    );
+    $usedStmt->execute([
+      ':token_id' => $resetRecord['token_id'],
+      ':used_at' => $now,
+    ]);
+
+    // Invalidate all active sessions for this user (require re-login)
+    $revokeStmt = $db->prepare('UPDATE sessions SET is_revoked = 1 WHERE user_id = :user_id AND is_revoked = 0');
+    $revokeStmt->execute([':user_id' => $resetRecord['user_id']]);
+
+    out(['ok' => true, 'message' => 'Password berhasil direset. Silakan login dengan password baru Anda.']);
   }
 
   $currentUser = null;

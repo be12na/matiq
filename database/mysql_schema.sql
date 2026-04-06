@@ -221,6 +221,26 @@ CREATE TABLE IF NOT EXISTS `whatsapp_queue` (
   KEY `idx_whatsapp_queue_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
+  `token_id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) NOT NULL,
+  `email` VARCHAR(191) NOT NULL,
+  `token` VARCHAR(255) NOT NULL,
+  `expires_at` DATETIME(3) NOT NULL,
+  `is_used` TINYINT(1) NOT NULL DEFAULT 0,
+  `used_at` DATETIME(3) DEFAULT NULL,
+  `created_at` DATETIME(3) NOT NULL,
+  PRIMARY KEY (`token_id`),
+  KEY `idx_password_reset_tokens_user` (`user_id`),
+  KEY `idx_password_reset_tokens_email` (`email`),
+  KEY `idx_password_reset_tokens_token` (`token`),
+  KEY `idx_password_reset_tokens_expires` (`expires_at`),
+  CONSTRAINT `fk_password_reset_tokens_user`
+    FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT INTO `thresholds` (`metric_key`, `enabled`, `rule_type`, `value`, `label`) VALUES
   ('roas', 1, 'min', 1.500000, 'ROAS min'),
   ('cpa', 0, 'max', 150000.000000, 'CPA max'),

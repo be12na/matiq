@@ -735,6 +735,146 @@ function AuthBrandPanel(props){
 // AUTH COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+function ForgotPasswordModal(props){
+  var onClose=props.onClose;
+  var onSuccess=props.onSuccess;
+  var st1=useState(""),email=st1[0],setEmail=st1[1];
+  var st2=useState(""),error=st2[0],setError=st2[1];
+  var st3=useState(""),successMessage=st3[0],setSuccessMessage=st3[1];
+  var st4=useState(false),loading=st4[0],setLoading=st4[1];
+
+  function handleSubmit(e){
+    e.preventDefault();
+    if(!email){setError("Email wajib diisi");return;}
+    setError("");
+    setLoading(true);
+    authReq("/auth/forgot-password",{email:email})
+      .then(function(res){
+        setLoading(false);
+        if(res.ok){
+          setSuccessMessage("Link reset password telah dikirim ke email Anda. Silakan cek email Anda dalam 2 jam.");
+          setTimeout(function(){onSuccess();},2000);
+        }else{
+          setError(res.error||"Gagal mengirim link reset");
+        }
+      })
+      .catch(function(err){
+        setLoading(false);
+        setError(err.message||"Terjadi kesalahan");
+      });
+  }
+
+  return h("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}},
+    h("div",{className:"card auth-card",style:{maxWidth:400,width:"100%",margin:10}},
+      h("div",{style:{marginBottom:16}},
+        h("div",{className:"auth-title",style:{marginBottom:4}},"Lupa Password?"),
+        h("div",{className:"auth-subtitle",style:{fontSize:12},"Masukkan email Anda untuk menerima link reset password.")
+      ),
+      successMessage&&h("div",{style:{padding:"8px 12px",background:"#dcfce7",border:"1px solid #86efac",borderRadius:10,color:"#166534",fontSize:12,marginBottom:12}},successMessage),
+      !successMessage&&h("form",{onSubmit:handleSubmit},
+        h("div",{style:{marginBottom:12}},
+          h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Email"),
+          h("input",{type:"email",value:email,onChange:function(e){setEmail(e.target.value);},placeholder:"email@example.com",required:true,disabled:loading})
+        ),
+        error&&h("div",{style:{padding:"8px 12px",background:"var(--danger-soft)",border:"1px solid #fecaca",borderRadius:10,color:"#991b1b",fontSize:12,marginBottom:12}},error),
+        h("button",{type:"submit",className:"btn-primary",style:{width:"100%",padding:"11px",fontSize:14},disabled:loading},loading?"Mengirim...":"Kirim Link Reset")
+      ),
+      h("div",{style:{textAlign:"center",marginTop:12}},
+        h("a",{href:"#",className:"text-link",onClick:function(e){e.preventDefault();onClose();}},"Kembali ke Login")
+      )
+    )
+  );
+}
+
+function ResetPasswordPage(props){
+  var token=props.token;
+  var onSuccess=props.onSuccess||function(){};
+  var st1=useState(""),password=st1[0],setPassword=st1[1];
+  var st2=useState(""),confirmPass=st2[0],setConfirmPass=st2[1];
+  var st3=useState(""),error=st3[0],setError=st3[1];
+  var st4=useState(""),successMessage=st4[0],setSuccessMessage=st4[1];
+  var st5=useState(false),loading=st5[0],setLoading=st5[1];
+
+  var passStrength=useMemo(function(){
+    if(!password)return {score:0,text:"",color:"#ddd"};
+    var score=0;
+    if(password.length>=8)score++;
+    if(password.length>=12)score++;
+    if(/[a-z]/.test(password)&&/[A-Z]/.test(password))score++;
+    if(/[0-9]/.test(password))score++;
+    if(/[^a-zA-Z0-9]/.test(password))score++;
+    var texts=["Sangat Lemah","Lemah","Cukup","Kuat","Sangat Kuat"];
+    var colors=["#e24b4a","#ba7517","#c9a227","#1d9e75","#0f6e56"];
+    return {score:score,text:texts[Math.min(score,4)]||"",color:colors[Math.min(score,4)]||"#ddd"};
+  },[password]);
+
+  function handleSubmit(e){
+    e.preventDefault();
+    setError("");
+    if(password!==confirmPass){setError("Password tidak cocok");return;}
+    if(password.length<8){setError("Password minimal 8 karakter");return;}
+    if(!/[0-9]/.test(password)){setError("Password harus mengandung angka");return;}
+    setLoading(true);
+    authReq("/auth/reset-password",{token:token,password:password})
+      .then(function(res){
+        setLoading(false);
+        if(res.ok){
+          setSuccessMessage(res.message||"Password berhasil direset. Redirecting ke login...");
+          setTimeout(function(){window.location.href="/";},2000);
+        }else{
+          setError(res.error||"Gagal reset password");
+        }
+      })
+      .catch(function(err){
+        setLoading(false);
+        setError(err.message||"Terjadi kesalahan");
+      });
+  }
+
+  return h("div",{className:"auth-shell"},
+    h("div",{className:"auth-panel"},
+      h(AuthBrandPanel,{
+        title:"Reset Password",
+        description:"Buat password baru untuk akun MATIQ Anda.",
+        items:["Keamanan akun terjaga","Akses dashboard kembali","Lindungi data tim"],
+        metrics:[
+          {value:"Secure",label:"Enkripsi password end-to-end",color:"#185fa5"},
+          {value:"Quick",label:"Proses reset 2 menit",color:"#1d9e75"},
+          {value:"Safe",label:"Token berlaku 2 jam saja",color:"#ba7517"}
+        ]
+      }),
+      h("div",{className:"card auth-card",style:{marginBottom:0}},
+        h("div",{className:"auth-form-header"},
+          h(BrandMark,{size:42}),
+          h("div",null,
+            h("div",{className:"brand-kicker",style:{marginBottom:4}},"Reset Account"),
+            h("div",{className:"auth-title"},"Password Baru"),
+            h("div",{className:"auth-subtitle"},"Masukkan password baru untuk mengamankan akun Anda.")
+          )
+        ),
+        !successMessage&&h("form",{onSubmit:handleSubmit},
+          h("div",{style:{marginBottom:12}},
+            h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Password Baru"),
+            h("input",{type:"password",value:password,onChange:function(e){setPassword(e.target.value);},placeholder:"••••••••",required:true,disabled:loading})
+          ),
+          password&&h("div",{style:{marginBottom:12,fontSize:11,color:passStrength.color}},passStrength.text," - "+password.length+" karakter"),
+          h("div",{style:{marginBottom:12}},
+            h("label",{style:{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}},"Konfirmasi Password"),
+            h("input",{type:"password",value:confirmPass,onChange:function(e){setConfirmPass(e.target.value);},placeholder:"••••••••",required:true,disabled:loading})
+          ),
+          error&&h("div",{style:{padding:"8px 12px",background:"var(--danger-soft)",border:"1px solid #fecaca",borderRadius:10,color:"#991b1b",fontSize:12,marginBottom:12}},error),
+          h("button",{type:"submit",className:"btn-primary",style:{width:"100%",padding:"11px",fontSize:14},disabled:loading},loading?"Memproses...":"Reset Password")
+        ),
+        successMessage&&h("div",{style:{padding:"8px 12px",background:"#dcfce7",border:"1px solid #86efac",borderRadius:10,color:"#166534",fontSize:12,marginBottom:12}},successMessage),
+        h("div",{style:{textAlign:"center",marginTop:18,fontSize:13}},
+          h("span",{style:{color:"var(--text-muted)"}},"Kembali ke? "),
+          h("a",{href:"/",className:"text-link",onClick:function(e){if(successMessage)return;e.preventDefault();window.location.href="/"}},"Login")
+        )
+      )
+    )
+  );
+}
+
 function LoginPage(props){
   var onLogin=props.onLogin;
   var onSwitch=props.onSwitch;
@@ -744,6 +884,7 @@ function LoginPage(props){
   var st2=useState(""),password=st2[0],setPassword=st2[1];
   var st3=useState(""),error=st3[0],setError=st3[1];
   var st4=useState(false),loading=st4[0],setLoading=st4[1];
+  var st5=useState(false),showForgotPassword=st5[0],setShowForgotPassword=st5[1];
 
   function handleSubmit(e){
     e.preventDefault();
@@ -794,14 +935,21 @@ function LoginPage(props){
             h("input",{type:"password",value:password,onChange:function(e){setPassword(e.target.value);},placeholder:"••••••••",required:true,disabled:loading})
           ),
           error&&h("div",{style:{padding:"8px 12px",background:"var(--danger-soft)",border:"1px solid #fecaca",borderRadius:10,color:"#991b1b",fontSize:12,marginBottom:12}},error),
-          h("button",{type:"submit",className:"btn-primary",style:{width:"100%",padding:"11px",fontSize:14},disabled:loading},loading?"Memproses...":"Masuk ke MATIQ")
+          h("button",{type:"submit",className:"btn-primary",style:{width:"100%",padding:"11px",fontSize:14},disabled:loading},loading?"Memproses...":"Masuk ke MATIQ"),
+          h("div",{style:{textAlign:"center",marginTop:12,fontSize:12}},
+            h("a",{href:"#",className:"text-link",onClick:function(e){e.preventDefault();setShowForgotPassword(true);}},"Lupa Password?")
+          )
         ),
         h("div",{style:{textAlign:"center",marginTop:18,fontSize:13}},
           h("span",{style:{color:"var(--text-muted)"}},"Belum punya akun? "),
           h("a",{href:"#",className:"text-link",onClick:function(e){e.preventDefault();onSwitch("register");}},"Daftar")
         )
       )
-    )
+    ),
+    showForgotPassword&&h(ForgotPasswordModal,{
+      onClose:function(){setShowForgotPassword(false);},
+      onSuccess:function(){setShowForgotPassword(false);}
+    })
   );
 }
 
@@ -1582,6 +1730,10 @@ function App(){
   }
   
   if(!isLoggedIn){
+    var resetToken=(""+window.location.search).match(/[?&]token=([^&]+)/);
+    if(resetToken&&resetToken[1]){
+      return h(ResetPasswordPage,{token:decodeURIComponent(resetToken[1]),onSuccess:function(){setAuthPage("login");}});
+    }
     if(authPage==="register"){
       return h(RegisterPage,{onRegisterSuccess:handleRegisterSuccess,onSwitch:function(nextPage){setAuthPage(nextPage);if(nextPage!=="login")setAuthNotice("");}});
     }
