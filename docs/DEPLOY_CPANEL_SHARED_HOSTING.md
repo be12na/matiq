@@ -1,12 +1,12 @@
 # Deploy ke cPanel Shared Hosting (Aman + Production-Friendly)
 
-Dokumen ini menyiapkan project agar bisa live di cPanel biasa (Apache + PHP), tanpa Node runtime dan tanpa mengubah logic bisnis yang berjalan di GAS.
+Dokumen ini menyiapkan project agar bisa live di cPanel biasa (Apache + PHP), tanpa Node runtime, dengan backend native PHP + MySQL.
 
 ## Ringkasan arsitektur
 
 - Frontend static: `index.html` + `app-main.js`
 - API gateway: PHP router (`cpanel-public/api/index.php`)
-- Source of truth data + business logic: Google Apps Script (`gas/*.gs`)
+- Source of truth data + business logic: MySQL (via phpMyAdmin + API PHP)
 
 ## 1) File yang dipakai untuk live di cPanel
 
@@ -28,10 +28,14 @@ Copy juga file frontend:
    - `/home/<cpanel-user>/.env`
 2. Isi dari template `.env.example`.
 3. Minimal wajib:
-   - `GAS_WEB_APP_URL`
-   - `DB_TARGET_SHEET_ID`
-4. Untuk protected action (`/app/*`, `/admin/*`, `/user/*`), isi:
-   - `INTERNAL_API_TOKEN`
+   - `DB_HOST`
+   - `DB_NAME`
+   - `DB_USER`
+   - `DB_PASS`
+4. Opsional:
+   - `DB_PORT`
+   - `DB_CHARSET`
+   - `AUTH_TOKEN_TTL_HOURS`
 
 `runtime-config.php` membaca variabel publik dari file env ini lalu expose ke browser sebagai `window.__MATIQ_PUBLIC_CONFIG__`.
 Pada mode cPanel, `.htaccess` me-rewrite `runtime-config.js` -> `runtime-config.php`, jadi frontend tetap memanggil `runtime-config.js` dengan kompatibilitas lintas environment.
@@ -49,30 +53,28 @@ Pada mode cPanel, `.htaccess` me-rewrite `runtime-config.js` -> `runtime-config.
 
 Semua route lain fallback ke `index.html` (SPA fallback).
 
-## 4) Endpoint mapping PHP -> GAS action
+## 4) Endpoint API (mode MySQL)
 
-- `POST /auth/register` -> `register`
-- `POST /auth/login` -> `login`
-- `POST /auth/verify` -> `verify_token`
-- `POST /auth/logout` -> `logout`
-- `POST /auth/create-first-admin` -> `create_first_admin`
-- `GET /admin/users` -> `list_users`
-- `POST /admin/users` -> `list_users` atau `create_user` (jika payload ada `password`)
-- `GET /admin/user` -> `get_user`
-- `POST /admin/user` -> `update_user`
-- `POST /admin/user/delete` -> `delete_user`
-- `POST /admin/user/reset-password` -> `reset_user_password`
-- `POST /admin/users/bulk-status` -> `bulk_update_status`
-- `GET|POST /admin/stats` -> `get_user_stats`
-- `GET /admin/notifications` -> `get_notification_status`
-- `POST /admin/notifications` -> `get_notification_status` atau `process_whatsapp_queue` (jika payload `process_queue=true`)
-- `GET /user/profile` -> `get_profile`
-- `POST /user/profile` -> `update_profile`
-- `POST /user/change-password` -> `change_password`
-- `GET /app/snapshot` -> `snapshot`
-- `POST /app/import` -> `import_csv`
-- `POST /app/save-note` -> `save_note`
-- `POST /app/ai` -> `ask_ai`
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/verify`
+- `POST /auth/logout`
+- `POST /auth/create-first-admin`
+- `GET /admin/users`
+- `POST /admin/users`
+- `POST /admin/user`
+- `POST /admin/user/delete`
+- `POST /admin/user/reset-password`
+- `POST /admin/users/bulk-status`
+- `GET /admin/stats`
+- `POST /admin/notifications`
+- `GET /user/profile`
+- `POST /user/profile`
+- `POST /user/change-password`
+- `GET /app/snapshot`
+- `POST /app/import`
+- `POST /app/save-note`
+- `POST /app/ai` (saat ini mengembalikan `501`)
 
 Catatan: `/oauth/openai/*` dikembalikan `501` pada mode gateway PHP ini, karena backend OAuth dedicated belum diimplementasi di repo ini.
 
@@ -90,7 +92,6 @@ Catatan: `/oauth/openai/*` dikembalikan `501` pada mode gateway PHP ini, karena 
 ## 6) Verifikasi manual (wajib saat deploy pertama)
 
 - Pastikan `mod_rewrite` aktif di hosting.
-- Pastikan `allow_url_fopen` aktif (dipakai `file_get_contents` untuk call GAS).
 - Pastikan file env benar-benar di luar public directory.
 - Pastikan permission file aman (umum: file `644`, folder `755`).
 - Jika domain dipasang di subfolder (bukan root), sesuaikan `RewriteBase` di `.htaccess`.
@@ -103,3 +104,4 @@ Sudah dibersihkan artefak non-runtime berikut:
 - `creative` (placeholder kosong)
 
 Tidak ada logic bisnis GAS/API contract yang diubah.
+Runtime cPanel saat ini berjalan native MySQL tanpa relay ke GAS.

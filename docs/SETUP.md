@@ -209,7 +209,7 @@ Jika deployment target Anda adalah cPanel (Apache + PHP) tanpa Cloudflare Functi
 
 - `docs/DEPLOY_CPANEL_SHARED_HOSTING.md`
 
-Panduan tersebut memakai gateway PHP (`cpanel-public/api/index.php`) untuk meneruskan route `/auth/*`, `/admin/*`, `/user/*`, dan `/app/*` ke GAS secara server-side agar token internal tetap aman.
+Panduan tersebut sekarang memakai gateway PHP (`cpanel-public/api/index.php`) sebagai backend native MySQL untuk route `/auth/*`, `/admin/*`, `/user/*`, dan `/app/*`.
 
 ## 12) Opsi Database MySQL (cPanel)
 
@@ -218,7 +218,7 @@ Jika Anda ingin menyiapkan MySQL di cPanel dari sekarang, gunakan:
 - `database/mysql_schema.sql`
 - `docs/MYSQL_SETUP_CPANEL.md`
 
-Catatan: schema MySQL sudah siap import, tetapi logic runtime existing saat ini masih menggunakan Google Sheets agar kompatibilitas flow lama tetap aman.
+Catatan: mode cPanel sekarang berjalan langsung di MySQL. Import schema tetap wajib dilakukan sebelum aplikasi dijalankan.
 
 ## 13) Integrasi Notifikasi (Mailketing + Starsender)
 

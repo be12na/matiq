@@ -11,8 +11,8 @@ var AIAUTHK = "act_ai_auth_v1";
 var APIBASEK = "act_api_base_v1";
 var AUTHK = "act_auth_v1";
 var PUBLIC_RUNTIME_CFG = (typeof window!=="undefined"&&window.__MATIQ_PUBLIC_CONFIG__)||{};
-var PUBLIC_GAS_WEB_APP_URL = String(PUBLIC_RUNTIME_CFG.gasWebAppUrl||"https://script.google.com/macros/s/AKfycbyEQM12lmuZ_Q7NrBC_OVEHXDHN49oLEe52GLuMbFbSiH3HSzz6PK1S7DULwnfuTp4U/exec");
-var PUBLIC_DB_TARGET_SHEET_ID = String(PUBLIC_RUNTIME_CFG.dbTargetSheetId||"1hbhtYLqzSIRlZoIiB0my-05tSIXdgAOjPbgpf7dJIEs");
+var PUBLIC_GAS_WEB_APP_URL = String(PUBLIC_RUNTIME_CFG.gasWebAppUrl||"");
+var PUBLIC_DB_TARGET_SHEET_ID = String(PUBLIC_RUNTIME_CFG.dbTargetSheetId||"");
 var PUBLIC_AUTH_FALLBACK_API_BASE = String(PUBLIC_RUNTIME_CFG.authFallbackApiBase||"");
 var PUBLIC_DEFAULT_API_BASE = String(PUBLIC_RUNTIME_CFG.defaultApiBase||"");
 var PUBLIC_DISABLE_LIVE_SYNC = String(PUBLIC_RUNTIME_CFG.disableLiveSync||"").toLowerCase()==="true";
@@ -104,12 +104,11 @@ function parseJsonResponse_(res){
 }
 
 function canFallbackAuthToGas_(path){
-  return !!authActionFromPath_(path);
+  return false;
 }
 
 function shouldDirectGasAuthFallback_(){
-  var host=(location.hostname||"").toLowerCase();
-  return host==="ads.cepat.top"&&!HAS_EXPLICIT_APIBASE;
+  return false;
 }
 
 function resolveAlternateAuthBase_(){
@@ -121,21 +120,7 @@ function resolveAlternateAuthBase_(){
 }
 
 function callAuthViaGasFallback_(path,payload){
-  var action=authActionFromPath_(path);
-  var gasUrl=normApiBase(PUBLIC_GAS_WEB_APP_URL);
-  if(!action||!gasUrl)return Promise.resolve(null);
-  var body=Object.assign({},payload||{},{action:action});
-  if(PUBLIC_DB_TARGET_SHEET_ID&&!body.db_target_sheet_id){
-    body.db_target_sheet_id=PUBLIC_DB_TARGET_SHEET_ID;
-  }
-  return fetch(gasUrl,{
-    method:"POST",
-    headers:{"Content-Type":"text/plain;charset=UTF-8"},
-    body:JSON.stringify(body)
-  }).then(parseJsonResponse_).then(function(j){
-    if(j)j.__viaGasFallback=true;
-    return j;
-  });
+  return Promise.resolve(null);
 }
 
 // Auth API calls
@@ -2329,14 +2314,14 @@ function App(){
     // IMPORT
     tab==="Import"&&h("div",null,
       h("div",{style:{fontSize:14,fontWeight:500,marginBottom:4}},"Import dari Meta Ads"),
-      h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Upload CSV/XLSX terpisah per level. File diproses live ke Google Sheets via secure relay."),
+      h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Upload CSV terpisah per level. File diproses live ke database MySQL via API server."),
       [{key:"campaign",label:"Campaign Level",desc:"View Campaign di Ads Manager -> Export"},{key:"adset",label:"Ad Set Level",desc:"View Ad Sets -> Export"},{key:"ad",label:"Ad Level",desc:"View Ads -> Export"}].map(function(item){
         return h("div",{key:item.key,className:"card"},
           h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:8}},
             h("div",null,h("div",{style:{fontWeight:500,fontSize:13}},item.label),h("div",{style:{fontSize:12,color:"#888"}},item.desc)),
-            h("button",{className:"btnp",onClick:function(){fRefs[item.key].current.click();}},imports[item.key]?"Siap: "+imports[item.key].name:"Upload CSV/XLSX")
+            h("button",{className:"btnp",onClick:function(){fRefs[item.key].current.click();}},imports[item.key]?"Siap: "+imports[item.key].name:"Upload CSV")
           ),
-          h("input",{ref:fRefs[item.key],type:"file",accept:".csv,.xlsx",style:{display:"none"},onChange:function(e){handleFile(e,item.key);}}),
+          h("input",{ref:fRefs[item.key],type:"file",accept:".csv",style:{display:"none"},onChange:function(e){handleFile(e,item.key);}}),
           importMsgs[item.key]&&h("div",{style:{padding:"5px 8px",borderRadius:6,background:importMsgs[item.key].startsWith("OK")?"#e1f5ee":"#faeeda",color:importMsgs[item.key].startsWith("OK")?"#0f6e56":"#854f0b",fontSize:12}},importMsgs[item.key])
         );
       }),

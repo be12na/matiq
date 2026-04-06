@@ -11,9 +11,11 @@ File schema sudah disiapkan di:
 3. Buat database baru (opsional jika belum ada), contoh: `matiq_tracker`.
 4. Buat user database, lalu assign ke database dengan privilege **ALL PRIVILEGES**.
 5. Buka **phpMyAdmin**.
-6. Pilih database target.
+6. Pilih database target terlebih dahulu.
 7. Tab **Import** -> pilih file `database/mysql_schema.sql`.
 8. Klik **Go** dan pastikan tidak ada error.
+
+Catatan: file schema tidak lagi berisi `CREATE DATABASE` atau `USE`, jadi import harus dilakukan setelah database target dipilih di phpMyAdmin.
 
 ## Tabel yang akan dibuat
 
@@ -38,12 +40,12 @@ Schema sudah termasuk:
 
 ## Catatan penting integrasi
 
-Saat ini logic utama aplikasi masih membaca/menulis ke Google Sheets (`gas/*.gs`), bukan langsung ke MySQL.
+Runtime cPanel sekarang membaca/menulis langsung ke MySQL melalui `cpanel-public/api/index.php`.
 
 Artinya:
 
-- MySQL ini sudah siap sebagai database production,
-- tetapi perpindahan runtime ke MySQL butuh layer repository/query di backend (belum diubah pada tahap ini agar contract existing tetap aman).
+- phpMyAdmin + MySQL adalah source of truth untuk mode cPanel,
+- endpoint `/auth/*`, `/admin/*`, `/user/*`, dan `/app/*` tidak lagi relay ke Google Apps Script.
 
 ## Verifikasi cepat setelah import
 

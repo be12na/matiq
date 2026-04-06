@@ -1,15 +1,10 @@
 -- MATIQ / Meta Ads Tracker
 -- MySQL schema for cPanel (phpMyAdmin compatible)
 -- Engine: InnoDB, Charset: utf8mb4
+-- Import this file after selecting the target database in phpMyAdmin.
 
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
-
-CREATE DATABASE IF NOT EXISTS `matiq_tracker`
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-USE `matiq_tracker`;
 
 CREATE TABLE IF NOT EXISTS `campaigns` (
   `id` VARCHAR(64) NOT NULL,
