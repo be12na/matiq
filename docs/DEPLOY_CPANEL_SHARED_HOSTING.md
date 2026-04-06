@@ -97,7 +97,31 @@ Catatan: `/oauth/openai/*` dikembalikan `501` pada mode gateway PHP ini, karena 
 - Pastikan permission file aman (umum: file `644`, folder `755`).
 - Jika domain dipasang di subfolder (bukan root), sesuaikan `RewriteBase` di `.htaccess`.
 
-## 7) Cleanup yang aman dilakukan
+## 7) Deploy dari GitHub tanpa konflik manual upload
+
+Jika server Anda update source via GitHub, gunakan alur ini agar tidak bentrok dengan upload manual.
+
+1. Clone repo ke folder source terpisah (bukan docroot), contoh:
+   - `/home/<cpanel-user>/matiq-repo`
+2. Pastikan docroot domain menunjuk ke folder live, contoh:
+   - `/home/<cpanel-user>/matiq.cepat.digital`
+3. Jalankan script deploy dari server:
+
+```bash
+bash /home/<cpanel-user>/matiq-repo/ops/deploy/deploy-cpanel-docroot.sh \
+  /home/<cpanel-user>/matiq-repo \
+  /home/<cpanel-user>/matiq.cepat.digital
+```
+
+Script tersebut akan:
+
+- `git pull --ff-only` dari branch `main`
+- sync file frontend (`index.html`, `app-main.js`, `runtime-config.js`)
+- sync file gateway cPanel (`.htaccess`, `runtime-config.php`, `api/index.php`)
+
+Dengan model ini, source tetap dari GitHub dan docroot hanya menerima hasil sinkronisasi file runtime.
+
+## 8) Cleanup yang aman dilakukan
 
 Sudah dibersihkan artefak non-runtime berikut:
 

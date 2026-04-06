@@ -10,6 +10,8 @@ langchain-docs/
 creative
 ops/archive/
 ops/runtime-state/
+ops/deploy/live-docroot/
+ops/deploy/*.zip
 
 # wrangler files
 .wrangler
