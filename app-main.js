@@ -1912,6 +1912,7 @@ function App(){
   },[currentUser]);
   
   var canAccessProtected=userAccess==="admin"||userAccess==="full";
+  var canUseImport=userAccess==="admin"||userAccess==="full";
   var isAdminUser=userAccess==="admin";
   var isDashboardOnlyUser=userAccess==="limited";
   
@@ -1944,10 +1945,15 @@ function App(){
   
   // Access denied for non-paid users on protected tabs
   var protectedTabs=["AI","Periode","Brief","Analitik"];
-  var adminOnlyTabs=["Import","Settings","Admin"];
+  var adminOnlyTabs=["Settings","Admin"];
   
   if(protectedTabs.indexOf(tab)>=0&&!canAccessProtected){
     return h(AccessDeniedPage,{reason:"limited",user:currentUser,onLogout:handleLogout});
+  }
+
+  if(tab==="Import"&&!canUseImport){
+    setTab("Dashboard");
+    return null;
   }
   
   if(adminOnlyTabs.indexOf(tab)>=0&&!isAdminUser){
@@ -2332,7 +2338,7 @@ function App(){
             )
           ),
           h("div",{className:"row",style:{gap:8,flexWrap:"wrap",justifyContent:"flex-end"}},
-            isAdminUser&&h("button",{className:"btnp",onClick:function(){setTab("Import");}},"Import"),
+            canUseImport&&h("button",{className:"btnp",onClick:function(){setTab("Import");}},"Import"),
             hasData&&h("button",{style:{padding:"6px 12px",fontSize:11,border:"1px solid #f97316",color:"#f97316",background:"transparent",cursor:"pointer"},onClick:handleResetData},"Reset Data"),
             h("button",{style:{padding:"6px 12px",fontSize:11},onClick:handleLogout},"Logout")
           )
@@ -2343,7 +2349,7 @@ function App(){
       // Hide Admin tab for non-admins, hide Import/Settings for non-admins
       var t=el.key;
       if(t==="Admin"&&!isAdminUser)return false;
-      if((t==="Import")&&!isAdminUser)return false;
+      if(t==="Import"&&!canUseImport)return false;
       return true;
     })),
 
