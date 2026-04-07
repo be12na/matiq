@@ -933,6 +933,89 @@ function sendEmailViaMailketing(array $env, string $recipient, string $subject, 
   ];
 }
 
+function addSubscriberToMailketingList(array $env, string $email, string $fullName, string $listId): array {
+  $apiUrl = trim(envGet($env, 'MAILKETING_LIST_API_URL', 'https://api.mailketing.co.id/api/v1/addsubtolist'));
+  $apiToken = trim(envGet($env, 'MAILKETING_API_KEY', ''));
+  $timeoutMs = (int)envGet($env, 'MAILKETING_TIMEOUT_MS', '15000');
+  if ($timeoutMs < 1000) {
+    $timeoutMs = 15000;
+  }
+
+  $listId = trim($listId);
+  if ($apiToken === '' || $listId === '') {
+    return [
+      'ok' => false,
+      'http_status' => 0,
+      'error' => 'MAILKETING_API_KEY atau list_id belum dikonfigurasi',
+      'response_excerpt' => '',
+    ];
+  }
+
+  $parts = preg_split('/\s+/', trim($fullName), 2);
+  $firstName = trim((string)($parts[0] ?? ''));
+  $lastName = trim((string)($parts[1] ?? ''));
+
+  $payload = [
+    'api_token' => $apiToken,
+    'list_id' => $listId,
+    'email' => trim($email),
+    'first_name' => $firstName !== '' ? $firstName : 'Subscriber',
+  ];
+  if ($lastName !== '') {
+    $payload['last_name'] = $lastName;
+  }
+
+  $ch = curl_init();
+  curl_setopt_array($ch, [
+    CURLOPT_URL => $apiUrl,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_ENCODING => '',
+    CURLOPT_MAXREDIRS => 5,
+    CURLOPT_TIMEOUT_MS => $timeoutMs,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+    CURLOPT_CUSTOMREQUEST => 'POST',
+    CURLOPT_POSTFIELDS => http_build_query($payload),
+    CURLOPT_HTTPHEADER => [
+      'Content-Type: application/x-www-form-urlencoded',
+    ],
+  ]);
+
+  $responseRaw = curl_exec($ch);
+  $httpStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  $curlError = curl_error($ch);
+  curl_close($ch);
+
+  $decoded = [];
+  if (is_string($responseRaw) && $responseRaw !== '') {
+    $json = json_decode($responseRaw, true);
+    if (is_array($json)) {
+      $decoded = $json;
+    }
+  }
+
+  $isSuccess = ($httpStatus >= 200 && $httpStatus < 300 && strtolower((string)($decoded['status'] ?? '')) === 'success');
+  $respMsg = (string)($decoded['response'] ?? '');
+  $respExcerpt = is_string($responseRaw) ? substr($responseRaw, 0, 450) : '';
+  $err = '';
+  if (!$isSuccess) {
+    if ($curlError !== '') {
+      $err = 'cURL: ' . $curlError;
+    } elseif ($respMsg !== '') {
+      $err = $respMsg;
+    } else {
+      $err = 'Mailketing list request gagal';
+    }
+  }
+
+  return [
+    'ok' => $isSuccess,
+    'http_status' => $httpStatus,
+    'error' => $err,
+    'response_excerpt' => $respExcerpt,
+  ];
+}
+
 function logNotification(
   PDO $db,
   string $eventType,
@@ -1096,7 +1179,7 @@ try {
 
     try {
       $db->beginTransaction();
-      $listId = trim((string)($payload['mailketing_list_id'] ?? ''));
+      $listId = trim((string)($payload['mailketing_list_id'] ?? '88538'));
       // Use direct query to avoid prepared statement cache issues
       $inscStr = "INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
                   VALUES ({$db->quote($userId)}, {$db->quote($email)}, {$db->quote($hash)}, {$db->quote($salt)}, 
@@ -1205,6 +1288,22 @@ try {
       $userId
     );
 
+    $listRes = addSubscriberToMailketingList($env, $email, $name, $listId);
+    logNotification(
+      $db,
+      'auth_register_list_add',
+      'email',
+      $email,
+      $listRes['ok'] ? 'sent' : 'failed',
+      1,
+      'mailketing',
+      (int)($listRes['http_status'] ?? 0),
+      (string)($listRes['error'] ?? ''),
+      (string)($listRes['response_excerpt'] ?? ''),
+      '',
+      $userId
+    );
+
     if (is_array($waQueueItem)) {
       $attempt = 1;
       $waRes = sendWhatsappViaStarsender($env, $waQueueItem);
@@ -1290,6 +1389,11 @@ try {
       'ok' => true,
       'message' => 'Pendaftaran berhasil. Silakan login untuk melanjutkan.',
       'redirect_to' => 'login',
+      'mailketing_list' => [
+        'list_id' => $listId,
+        'ok' => (bool)($listRes['ok'] ?? false),
+        'error' => (string)($listRes['error'] ?? ''),
+      ],
     ]);
   }
 
@@ -1617,7 +1721,7 @@ try {
     $salt = bin2hex(random_bytes(16));
     $hash = password_hash($password, PASSWORD_BCRYPT);
     $now = utcNowMs();
-    $listId = trim((string)($payload['mailketing_list_id'] ?? ''));
+    $listId = trim((string)($payload['mailketing_list_id'] ?? '88538'));
 
     $stmt = $db->prepare(
       'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)

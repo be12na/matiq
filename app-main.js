@@ -15,6 +15,7 @@ var PUBLIC_GAS_WEB_APP_URL = String(PUBLIC_RUNTIME_CFG.gasWebAppUrl||"");
 var PUBLIC_DB_TARGET_SHEET_ID = String(PUBLIC_RUNTIME_CFG.dbTargetSheetId||"");
 var PUBLIC_AUTH_FALLBACK_API_BASE = String(PUBLIC_RUNTIME_CFG.authFallbackApiBase||"");
 var PUBLIC_DEFAULT_API_BASE = String(PUBLIC_RUNTIME_CFG.defaultApiBase||"/api/index.php");
+var PUBLIC_DEFAULT_MAILKETING_LIST_ID = String(PUBLIC_RUNTIME_CFG.defaultMailketingListId||"88538");
 var PUBLIC_DISABLE_LIVE_SYNC = String(PUBLIC_RUNTIME_CFG.disableLiveSync||"").toLowerCase()==="true";
 var DEF = {campaigns:[],adsets:[],ads:[],notes:{},thresholds:{roas:{enabled:true,min:1.5,label:"ROAS min"},cpa:{enabled:false,max:150000,label:"CPA max"},ctr:{enabled:true,min:1,label:"CTR min %"},cpm:{enabled:false,max:60000,label:"CPM max"}}};
 var BRAND = {
@@ -383,6 +384,11 @@ function apiPath(path){
   if(/^https?:\/\//i.test(p))return p;
   if(p.charAt(0)!=="/")p="/"+p;
   return (APIBASE?APIBASE.replace(/\/$/,""):"")+p;
+}
+
+function defaultMailketingListId_(){
+  var s=String(PUBLIC_DEFAULT_MAILKETING_LIST_ID||"").trim();
+  return s||"88538";
 }
 
 function sanitizePublicError(msg){
@@ -956,6 +962,7 @@ function LoginPage(props){
 function RegisterPage(props){
   var onRegisterSuccess=props.onRegisterSuccess||function(){};
   var onSwitch=props.onSwitch;
+  var defaultListId=defaultMailketingListId_();
   var st1=useState(""),name=st1[0],setName=st1[1];
   var st2=useState(""),email=st2[0],setEmail=st2[1];
   var st3=useState(""),whatsappNumber=st3[0],setWhatsappNumber=st3[1];
@@ -988,7 +995,7 @@ function RegisterPage(props){
     if(!(waDigits.indexOf("62")===0||waDigits.indexOf("0")===0)){setError("Nomor WhatsApp harus diawali 62 atau 0");return;}
     if(waDigits.length<10||waDigits.length>15){setError("Format nomor WhatsApp tidak valid");return;}
     setLoading(true);
-    authReq("/auth/register",{name:name,email:email,password:password,whatsapp_number:whatsappNumber})
+    authReq("/auth/register",{name:name,email:email,password:password,whatsapp_number:whatsappNumber,mailketing_list_id:defaultListId})
       .then(function(res){
         setLoading(false);
         if(res.ok){
@@ -1328,6 +1335,7 @@ function AdminUserPanel(props){
             h("th",{style:{width:34}},h("input",{type:"checkbox",checked:users.length>0&&selectedUsers.size===users.length,onChange:toggleAllUsers,style:{width:14,height:14,cursor:"pointer"}})),
             h("th",null,"Nama"),
             h("th",null,"Email"),
+            h("th",null,"List ID"),
             h("th",null,"Role"),
             h("th",null,"Status"),
             h("th",null,"Aktif"),
@@ -1340,6 +1348,7 @@ function AdminUserPanel(props){
               h("td",null,h("input",{type:"checkbox",checked:selectedUsers.has(u.id),onChange:function(){toggleUserSelection(u.id);},style:{width:14,height:14,cursor:"pointer"}})),
               h("td",null,u.name||"-"),
               h("td",null,u.email),
+              h("td",null,h("span",{className:"tag",style:{background:"#eef2ff",color:"#3730a3"}},u.mailketing_list_id||defaultMailketingListId_())),
               h("td",null,h("span",{className:"tag",style:{background:u.role==="admin"?"#dbeafe":"#f3f4f6",color:u.role==="admin"?"#1e40af":"#374151"}},u.role)),
               h("td",null,h("span",{className:"tag",style:{background:u.payment_status==="LUNAS"?"#dcfce7":u.payment_status==="PENDING"?"#fef3c7":"#f3f4f6",color:u.payment_status==="LUNAS"?"#166534":u.payment_status==="PENDING"?"#92400e":"#374151"}},u.payment_status||"NONE")),
               h("td",null,u.is_active==="true"?"✓":"✗"),
@@ -1379,6 +1388,7 @@ function EditUserModal(props){
   var st2=useState(user.role||"user"),role=st2[0],setRole=st2[1];
   var st3=useState(user.payment_status||"NONE"),status=st3[0],setStatus=st3[1];
   var st4=useState(user.is_active==="true"),isActive=st4[0],setIsActive=st4[1];
+  var st5=useState(user.mailketing_list_id||defaultMailketingListId_()),mailketingListId=st5[0],setMailketingListId=st5[1];
   
   return h("div",{className:"card",style:{maxWidth:400,width:"100%",margin:20}},
     h("div",{style:{fontSize:14,fontWeight:500,marginBottom:16}},"Edit User: "+user.email),
@@ -1401,6 +1411,10 @@ function EditUserModal(props){
         h("option",{value:"LUNAS"},"LUNAS")
       )
     ),
+    h("div",{style:{marginBottom:12}},
+      h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Mailketing List ID"),
+      h("input",{type:"text",value:mailketingListId,onChange:function(e){setMailketingListId(e.target.value);},placeholder:"88538"})
+    ),
     h("div",{style:{marginBottom:16}},
       h("label",{className:"row",style:{fontSize:12,gap:6}},
         h("input",{type:"checkbox",style:{width:14,height:14},checked:isActive,onChange:function(e){setIsActive(e.target.checked);}}),
@@ -1408,7 +1422,7 @@ function EditUserModal(props){
       )
     ),
     h("div",{className:"row"},
-      h("button",{className:"btnp",onClick:function(){onSave({name:name,role:role,payment_status:status,is_active:isActive?"true":"false"});}},"Simpan"),
+      h("button",{className:"btnp",onClick:function(){onSave({name:name,role:role,payment_status:status,is_active:isActive?"true":"false",mailketing_list_id:mailketingListId});}},"Simpan"),
       h("button",{onClick:onClose},"Batal")
     )
   );
@@ -1542,6 +1556,7 @@ function CreateUserModal(props){
   var st3=useState(""),password=st3[0],setPassword=st3[1];
   var st4=useState("user"),role=st4[0],setRole=st4[1];
   var st5=useState("NONE"),status=st5[0],setStatus=st5[1];
+  var st6=useState(defaultMailketingListId_()),mailketingListId=st6[0],setMailketingListId=st6[1];
   
   return h("div",{className:"card",style:{maxWidth:400,width:"100%",margin:20}},
     h("div",{style:{fontSize:14,fontWeight:500,marginBottom:16}},"Tambah User Baru"),
@@ -1572,8 +1587,12 @@ function CreateUserModal(props){
         h("option",{value:"LUNAS"},"LUNAS")
       )
     ),
+    h("div",{style:{marginBottom:16}},
+      h("label",{style:{fontSize:12,color:"#555",display:"block",marginBottom:4}},"Mailketing List ID"),
+      h("input",{type:"text",value:mailketingListId,onChange:function(e){setMailketingListId(e.target.value);},placeholder:"88538"})
+    ),
     h("div",{className:"row"},
-      h("button",{className:"btnp",onClick:function(){onSave({name:name,email:email,password:password,role:role,payment_status:status});}},"Buat User"),
+      h("button",{className:"btnp",onClick:function(){onSave({name:name,email:email,password:password,role:role,payment_status:status,mailketing_list_id:mailketingListId});}},"Buat User"),
       h("button",{onClick:onClose},"Batal")
     )
   );

@@ -4,6 +4,7 @@ window.__MATIQ_PUBLIC_CONFIG__ = Object.assign(
 		authFallbackApiBase: "",
 		disableLiveSync: false,
 		runtimeMode: "mysql",
+		defaultMailketingListId: "88538",
 		gasWebAppUrl: "",
 		dbTargetSheetId: ""
 	},
