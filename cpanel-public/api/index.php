@@ -1067,9 +1067,8 @@ try {
       ':last_login' => null,
     ]);
 
-    $user = $db->prepare('SELECT * FROM users WHERE id = :id');
-    $user->execute([':id' => $userId]);
-    $u = $user->fetch();
+    $escapedUserId = $db->quote($userId);
+    $u = $db->query("SELECT * FROM users WHERE id = {$escapedUserId}")->fetch();
     $token = issueSession($db, $u, (int)envGet($env, 'AUTH_TOKEN_TTL_HOURS', '24'));
 
     out(['ok' => true, 'token' => $token, 'user' => userToPublic($u)]);
@@ -1094,9 +1093,8 @@ try {
       fail('Nomor WhatsApp tidak valid', 400);
     }
 
-    $exists = $db->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
-    $exists->execute([':email' => $email]);
-    if ($exists->fetch()) {
+    $escapedEmail = $db->quote($email);
+    if ($db->query("SELECT id FROM users WHERE email = {$escapedEmail} LIMIT 1")->fetch()) {
       fail('Email sudah terdaftar', 409);
     }
 
@@ -1324,10 +1322,9 @@ try {
       fail('Email dan password wajib diisi', 400);
     }
 
-    $selectStmt = $db->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
-    $selectStmt->execute([':email' => $email]);
-    $user = $selectStmt->fetch();
-    $selectStmt = null;
+    // Use direct query to avoid prepared statement cache issues
+    $escapedEmail = $db->quote($email);
+    $user = $db->query("SELECT * FROM users WHERE email = {$escapedEmail} LIMIT 1")->fetch();
     
     if (!$user) {
       fail('Email atau password salah', 401);
@@ -1340,14 +1337,13 @@ try {
       fail('Email atau password salah', 401);
     }
 
-    $updateStmt = $db->prepare('UPDATE users SET last_login = :last_login, updated_at = :updated_at WHERE id = :id');
     $now = utcNowMs();
-    $updateStmt->execute([':last_login' => $now, ':updated_at' => $now, ':id' => $user['id']]);
-    $updateStmt = null;
+    $escapedId = $db->quote((string)$user['id']);
+    $db->exec(
+      "UPDATE users SET last_login = {$db->quote($now)}, updated_at = {$db->quote($now)} WHERE id = {$escapedId}"
+    );
 
-    $freshSelectStmt = $db->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');
-    $freshSelectStmt->execute([':id' => $user['id']]);
-    $fresh = $freshSelectStmt->fetch();
+    $fresh = $db->query("SELECT * FROM users WHERE id = {$escapedId} LIMIT 1")->fetch();
     $freshSelectStmt = null;
     
     $token = issueSession($db, $fresh, (int)envGet($env, 'AUTH_TOKEN_TTL_HOURS', '24'));
@@ -1382,9 +1378,8 @@ try {
       fail('Format email tidak valid', 400);
     }
 
-    $userStmt = $db->prepare('SELECT id, email, name FROM users WHERE email = :email LIMIT 1');
-    $userStmt->execute([':email' => $email]);
-    $user = $userStmt->fetch(PDO::FETCH_ASSOC);
+    $escapedForgotEmail = $db->quote($email);
+    $user = $db->query("SELECT id, email, name FROM users WHERE email = {$escapedForgotEmail} LIMIT 1")->fetch(PDO::FETCH_ASSOC);
     
     if (!$user) {
       // For security, don't reveal if email exists - just say success
@@ -1634,9 +1629,8 @@ try {
       $payment = 'NONE';
     }
 
-    $exists = $db->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
-    $exists->execute([':email' => $email]);
-    if ($exists->fetch()) {
+    $escapedCreateEmail = $db->quote($email);
+    if ($db->query("SELECT id FROM users WHERE email = {$escapedCreateEmail} LIMIT 1")->fetch()) {
       fail('Email sudah terdaftar', 409);
     }
 
