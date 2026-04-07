@@ -1735,9 +1735,18 @@ function App(){
   function connectProviderBrowser(provider){
     var p=String(provider||"").toLowerCase();
     if(p==="openai"){
-      setProviderAuthState("openai","checking","");
-      setLiveMsg("Mengalihkan ke OpenAI OAuth...");
-      location.href=apiPath(openAiOauthStartPath_());
+      var oauthUrl=apiPath(openAiOauthStartPath_());
+      setProviderAuthState("openai","pending","");
+      setLiveMsg("Membuka login OpenAI di tab baru...");
+      try{
+        var win=window.open(oauthUrl,"_blank","noopener,noreferrer");
+        if(!win){
+          setLiveMsg("Popup diblokir browser. Mengalihkan ke halaman login OpenAI...");
+          location.href=oauthUrl;
+        }
+      }catch(e){
+        location.href=oauthUrl;
+      }
       return;
     }
     var url=providerLoginUrl_(p);
