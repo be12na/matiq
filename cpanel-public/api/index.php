@@ -1259,7 +1259,7 @@ try {
       return;
     }
 
-    $appUrl = trim(envGet($env, 'APP_URL', ''));
+    $appUrl = 'https://matiq.cepat.digital/';
     $safeName = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
     $safeEmail = htmlspecialchars($email, ENT_QUOTES, 'UTF-8');
     $loginHref = $appUrl !== '' ? rtrim($appUrl, '/') : '';
