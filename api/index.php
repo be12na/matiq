@@ -362,6 +362,14 @@ function requireAdmin(array $currentUser): void {
   }
 }
 
+function requireImportAccess(array $currentUser): void {
+  $role = strtolower((string)($currentUser['role'] ?? ''));
+  $paymentStatus = strtoupper(trim((string)($currentUser['payment_status'] ?? '')));
+  if ($role !== 'admin' && $paymentStatus !== 'LUNAS') {
+    fail('Forbidden: Import hanya untuk admin atau user berstatus LUNAS', 403);
+  }
+}
+
 function parseCsvRows(string $csv): array {
   $csv = trim($csv);
   if ($csv === '') {
@@ -2067,7 +2075,7 @@ try {
   }
 
   if ($method === 'POST' && $uriPath === '/app/import') {
-    requireAdmin($currentUser);
+    requireImportAccess($currentUser);
 
     $level = strtolower(trim((string)($payload['level'] ?? '')));
     if (!in_array($level, ['campaign', 'adset', 'ad'], true)) {
