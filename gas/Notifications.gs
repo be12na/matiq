@@ -337,7 +337,7 @@ function getNotificationDashboardStats_(limit) {
 }
 
 function sendRegistrationNotifications_(user, token, whatsappNumber) {
-  var out = { email_ok: false, whatsapp_queued: false, whatsapp_processed: false, errors: [] };
+  var out = { email_ok: false, whatsapp_queued: false, whatsapp_processed: false, list_injection_ok: false, errors: [] };
   try {
     var emailTpl = renderRegistrationEmail_(user, token);
     var emailRes = sendMailketingEmail_(user.email, emailTpl.subject, emailTpl.html, emailTpl.text, 'register_verification', user.id);
@@ -346,6 +346,18 @@ function sendRegistrationNotifications_(user, token, whatsappNumber) {
   } catch (err) {
     out.errors.push('Email exception: ' + (err && err.message ? err.message : String(err)));
   }
+  
+  // Inject user to Mailketing list if list ID is provided
+  if (user && user.mailketing_list_id) {
+    try {
+      var listRes = injectUserToMailketingList_(user, user.mailketing_list_id);
+      out.list_injection_ok = !!(listRes && listRes.ok);
+      if (!out.list_injection_ok) out.errors.push('List Injection: ' + String((listRes && listRes.error) || 'gagal inject'));
+    } catch (err) {
+      out.errors.push('List Injection exception: ' + (err && err.message ? err.message : String(err)));
+    }
+  }
+  
   if (whatsappNumber) {
     var queueId = enqueueWhatsappMessage_({
       user_id: user.id,
@@ -365,6 +377,84 @@ function sendLoginNotification_(user) {
   var emailTpl = renderLoginEmail_(user);
   var emailRes = sendMailketingEmail_(user.email, emailTpl.subject, emailTpl.html, emailTpl.text, 'login_notification', user.id);
   return { email_ok: !!(emailRes && emailRes.ok), error: emailRes && emailRes.ok ? '' : String((emailRes && emailRes.error) || '') };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAILKETING LIST INJECTION
+// ─────────────────────────────────────────────────────────────────────────────
+
+function injectUserToMailketingList_(user, listId) {
+  if (!user || !user.id || !user.email || !listId) {
+    return { ok: false, error: 'User dan List ID wajib diisi', retryable: false };
+  }
+  
+  var cfg = getNotificationConfig_();
+  if (!cfg.mailketing_key) {
+    return { ok: false, error: 'Mailketing API key belum dikonfigurasi', retryable: false };
+  }
+  
+  // Mailketing list injection endpoint
+  var listUrl = 'https://api.mailketing.co.id/api/v1/subscribe';
+  
+  try {
+    var payload = {
+      api_token: cfg.mailketing_key,
+      email: String(user.email || '').toLowerCase().trim(),
+      list_id: String(listId || '').trim(),
+      first_name: String((user.name || '').split(' ')[0] || ''),
+      last_name: String((user.name || '').split(' ').slice(1).join(' ') || '')
+    };
+    
+    var options = {
+      method: 'post',
+      payload: payload,
+      muteHttpExceptions: true,
+      followRedirects: true,
+      validateHttpsCertificates: true,
+      timeout: cfg.mailketing_timeout_ms || 15000
+    };
+    
+    var res = UrlFetchApp.fetch(listUrl, options);
+    var code = Number(res.getResponseCode() || 0);
+    var body = String(res.getContentText() || '');
+    var ok = code >= 200 && code < 300;
+    
+    appendNotificationLog_({
+      event_type: 'list_injection',
+      channel: 'email',
+      recipient: user.email,
+      status: ok ? 'sent' : 'failed',
+      attempt: 1,
+      provider: 'mailketing',
+      http_status: String(code),
+      error_message: ok ? '' : ('Mailketing List Injection HTTP ' + code),
+      response_excerpt: body,
+      user_id: user.id
+    });
+    
+    return {
+      ok: ok,
+      http_status: code,
+      error: ok ? '' : ('Mailketing HTTP ' + code),
+      retryable: !ok && (code === 408 || code === 429 || code >= 500),
+      body: body,
+      message: ok ? 'User berhasil ditambahkan ke list' : 'Gagal menambahkan user ke list'
+    };
+  } catch (err) {
+    var msg = err && err.message ? err.message : String(err);
+    appendNotificationLog_({
+      event_type: 'list_injection',
+      channel: 'email',
+      recipient: user.email,
+      status: 'failed',
+      attempt: 1,
+      provider: 'mailketing',
+      error_message: msg,
+      user_id: user.id
+    });
+    return { ok: false, error: msg, retryable: true };
+  }
 }
 
 function apiGetNotificationStatus_(payload) {

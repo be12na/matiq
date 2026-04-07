@@ -245,6 +245,7 @@ function registerUser_(payload) {
   var password = payload.password || '';
   var name = String(payload.name || '').trim();
   var whatsappNumberRaw = String(payload.whatsapp_number || payload.phone_number || '').trim();
+  var mailketingListId = String(payload.mailketing_list_id || '').trim();
   
   // Validate inputs
   var emailVal = validateEmail_(email);
@@ -276,7 +277,8 @@ function registerUser_(payload) {
     name: name,
     role: 'user',
     payment_status: 'NONE',
-    is_active: 'true'
+    is_active: 'true',
+    mailketing_list_id: mailketingListId || null
   });
 
   upsertUserContact_(user.id, user.email, waVal.normalized, 'true');
@@ -293,7 +295,8 @@ function registerUser_(payload) {
       email: user.email,
       name: user.name,
       role: user.role,
-      payment_status: user.payment_status
+      payment_status: user.payment_status,
+      mailketing_list_id: user.mailketing_list_id
     },
     token: token,
     notifications: notif

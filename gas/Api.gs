@@ -82,9 +82,12 @@ function handleApiPost(action, payload) {
       case 'reset_user_password':
         var adminUser6 = assertAdminRole_(payload);
         return jsonResponse(apiResetUserPassword_(payload, adminUser6));
-      case 'bulk_update_status':
+      case 'inject_user_to_list':
         var adminUser7 = assertAdminRole_(payload);
-        return jsonResponse(apiBulkUpdateStatus_(payload, adminUser7));
+        return jsonResponse(apiInjectUserToMailketingList_(payload, adminUser7));
+      case 'bulk_update_status':
+        var adminUser8 = assertAdminRole_(payload);
+        return jsonResponse(apiBulkUpdateStatus_(payload, adminUser8));
       case 'get_user_stats':
         assertAdminRole_(payload);
         return jsonResponse(apiGetUserStats_());

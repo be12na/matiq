@@ -6,7 +6,9 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   const payload = await context.request.clone().json().catch(() => ({}));
-  const action = payload && payload.password ? 'create_user' : 'list_users';
+  const action = 
+    payload && payload.user_id && payload.mailketing_list_id !== undefined ? 'update_user' :
+    payload && payload.password ? 'create_user' : 'list_users';
   return withCors(await proxyProtectedAction(context, action));
 }
 

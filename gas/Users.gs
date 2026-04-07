@@ -62,6 +62,7 @@ function apiGetUser_(payload, adminUser) {
       name: user.name,
       role: user.role,
       payment_status: user.payment_status,
+      mailketing_list_id: user.mailketing_list_id,
       created_at: user.created_at,
       updated_at: user.updated_at,
       last_login: user.last_login,
@@ -144,6 +145,16 @@ function apiUpdateUser_(payload, adminUser) {
     updates.email = String(payload.email).toLowerCase().trim();
   }
   
+  // Mailketing List ID
+  if (payload.mailketing_list_id !== undefined) {
+    var listId = String(payload.mailketing_list_id || '').trim();
+    if (listId) {
+      updates.mailketing_list_id = listId;
+    } else {
+      updates.mailketing_list_id = null;
+    }
+  }
+  
   if (Object.keys(updates).length === 0) {
     return { ok: false, error: 'Tidak ada data yang diupdate' };
   }
@@ -164,7 +175,8 @@ function apiUpdateUser_(payload, adminUser) {
       name: updatedUser.name,
       role: updatedUser.role,
       payment_status: updatedUser.payment_status,
-      is_active: updatedUser.is_active
+      is_active: updatedUser.is_active,
+      mailketing_list_id: updatedUser.mailketing_list_id
     }
   };
 }
@@ -223,6 +235,7 @@ function apiCreateUser_(payload, adminUser) {
   var name = String(payload.name || '').trim();
   var role = payload.role || 'user';
   var paymentStatus = payload.payment_status || 'NONE';
+  var mailketingListId = String(payload.mailketing_list_id || '').trim();
   
   // Validate inputs
   var emailVal = validateEmail_(email);
@@ -261,7 +274,8 @@ function apiCreateUser_(payload, adminUser) {
     name: name,
     role: role,
     payment_status: paymentStatus,
-    is_active: 'true'
+    is_active: 'true',
+    mailketing_list_id: mailketingListId || null
   });
   
   return {
@@ -272,7 +286,8 @@ function apiCreateUser_(payload, adminUser) {
       email: user.email,
       name: user.name,
       role: user.role,
-      payment_status: user.payment_status
+      payment_status: user.payment_status,
+      mailketing_list_id: user.mailketing_list_id
     }
   };
 }
@@ -317,6 +332,44 @@ function apiResetUserPassword_(payload, adminUser) {
   return {
     ok: true,
     message: 'Password berhasil direset. User harus login kembali.'
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INJECT USER TO MAILKETING LIST (for admin convenience)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function apiInjectUserToMailketingList_(payload, adminUser) {
+  var userId = payload.user_id;
+  var listId = String(payload.mailketing_list_id || '').trim();
+  
+  if (!userId) {
+    return { ok: false, error: 'user_id wajib diisi' };
+  }
+  
+  if (!listId) {
+    return { ok: false, error: 'mailketing_list_id wajib diisi' };
+  }
+  
+  var user = getUserById_(userId);
+  if (!user) {
+    return { ok: false, error: 'User tidak ditemukan' };
+  }
+  
+  // Call the injection function
+  var injectionResult = injectUserToMailketingList_(user, listId);
+  
+  return {
+    ok: injectionResult.ok,
+    message: injectionResult.message || injectionResult.error,
+    error: injectionResult.ok ? '' : injectionResult.error,
+    http_status: injectionResult.http_status,
+    details: {
+      user_id: user.id,
+      email: user.email,
+      list_id: listId,
+      status: injectionResult.ok ? 'success' : 'failed'
+    }
   };
 }
 

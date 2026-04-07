@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `name` VARCHAR(191) NOT NULL,
   `role` ENUM('admin','user') NOT NULL DEFAULT 'user',
   `payment_status` ENUM('LUNAS','PENDING','NONE') NOT NULL DEFAULT 'NONE',
+  `mailketing_list_id` VARCHAR(255) DEFAULT NULL,
   `created_at` DATETIME(3) NOT NULL,
   `updated_at` DATETIME(3) NOT NULL,
   `last_login` DATETIME(3) DEFAULT NULL,
@@ -144,6 +145,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   UNIQUE KEY `uq_users_email` (`email`),
   KEY `idx_users_role` (`role`),
   KEY `idx_users_payment_status` (`payment_status`),
+  KEY `idx_users_mailketing_list_id` (`mailketing_list_id`),
   KEY `idx_users_is_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

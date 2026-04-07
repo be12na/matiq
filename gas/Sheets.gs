@@ -252,6 +252,7 @@ function listUsers_(options) {
       name: u.name,
       role: u.role,
       payment_status: u.payment_status,
+      mailketing_list_id: u.mailketing_list_id,
       created_at: u.created_at,
       updated_at: u.updated_at,
       last_login: u.last_login,
