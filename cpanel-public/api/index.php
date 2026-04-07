@@ -117,6 +117,14 @@ function pdo(array $env): PDO {
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     PDO::ATTR_EMULATE_PREPARES => false,
   ]);
+  
+  // Clear any cached prepared statements after schema changes
+  try {
+    $db->exec('FLUSH TABLES');
+  } catch (Exception $e) {
+    // Ignore flush errors, connection is still valid
+  }
+  
   return $db;
 }
 
@@ -227,6 +235,7 @@ function userToPublic(array $u): array {
     'name' => (string)$u['name'],
     'role' => (string)$u['role'],
     'payment_status' => (string)$u['payment_status'],
+    'mailketing_list_id' => (string)($u['mailketing_list_id'] ?? ''),
     'is_active' => ((int)$u['is_active'] === 1) ? 'true' : 'false',
     'created_at' => (string)($u['created_at'] ?? ''),
     'updated_at' => (string)($u['updated_at'] ?? ''),
@@ -1036,8 +1045,8 @@ try {
     $now = utcNowMs();
 
     $stmt = $db->prepare(
-      'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, created_at, updated_at, last_login, is_active)
-       VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :created_at, :updated_at, :last_login, 1)'
+      'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
+       VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :mailketing_list_id, :created_at, :updated_at, :last_login, 1)'
     );
     $stmt->execute([
       ':id' => $userId,
@@ -1047,6 +1056,7 @@ try {
       ':name' => $name !== '' ? $name : 'Admin',
       ':role' => 'admin',
       ':payment_status' => 'LUNAS',
+      ':mailketing_list_id' => null,
       ':created_at' => $now,
       ':updated_at' => $now,
       ':last_login' => null,
@@ -1094,9 +1104,10 @@ try {
 
     try {
       $db->beginTransaction();
+      $listId = trim((string)($payload['mailketing_list_id'] ?? ''));
       $ins = $db->prepare(
-        'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, created_at, updated_at, last_login, is_active)
-         VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :created_at, :updated_at, :last_login, 1)'
+        'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
+         VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :mailketing_list_id, :created_at, :updated_at, :last_login, 1)'
       );
       $ins->execute([
         ':id' => $userId,
@@ -1106,6 +1117,7 @@ try {
         ':name' => $name,
         ':role' => 'user',
         ':payment_status' => 'NONE',
+        ':mailketing_list_id' => $listId !== '' ? $listId : null,
         ':created_at' => $now,
         ':updated_at' => $now,
         ':last_login' => null,
@@ -1627,10 +1639,11 @@ try {
     $salt = bin2hex(random_bytes(16));
     $hash = password_hash($password, PASSWORD_BCRYPT);
     $now = utcNowMs();
+    $listId = trim((string)($payload['mailketing_list_id'] ?? ''));
 
     $stmt = $db->prepare(
-      'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, created_at, updated_at, last_login, is_active)
-       VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :created_at, :updated_at, :last_login, 1)'
+      'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
+       VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :mailketing_list_id, :created_at, :updated_at, :last_login, 1)'
     );
     $stmt->execute([
       ':id' => $id,
@@ -1640,6 +1653,7 @@ try {
       ':name' => $name,
       ':role' => $role,
       ':payment_status' => $payment,
+      ':mailketing_list_id' => $listId !== '' ? $listId : null,
       ':created_at' => $now,
       ':updated_at' => $now,
       ':last_login' => null,
@@ -1876,6 +1890,12 @@ try {
     if (array_key_exists('is_active', $payload)) {
       $fields[] = 'is_active = :is_active';
       $params[':is_active'] = isTruthy($payload['is_active']) ? 1 : 0;
+    }
+
+    if (array_key_exists('mailketing_list_id', $payload)) {
+      $listId = trim((string)$payload['mailketing_list_id']);
+      $fields[] = 'mailketing_list_id = :mailketing_list_id';
+      $params[':mailketing_list_id'] = $listId !== '' ? $listId : null;
     }
 
     if (count($fields) === 0) {
