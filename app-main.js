@@ -2123,6 +2123,7 @@ function App(){
   var metricOpts=[{key:"roas",label:"ROAS",color:"#1d9e75"},{key:"ctr",label:"CTR%",color:"#185fa5"},{key:"cpa",label:"CPA",color:"#ba7517"},{key:"spend",label:"Spend",color:"#534ab7"},{key:"cpm",label:"CPM",color:"#e24b4a"}];
   var selM=metricOpts.find(function(m){return m.key===analyticsMetric;})||metricOpts[0];
   var hasData=!!(data.campaigns.length||data.adsets.length||data.ads.length);
+  var showImportHint=!hasData;
   var briefItems=allItems.filter(function(c){
     if(!(c._level==="ad"||c._level==="campaign"))return false;
     return calcM(c).spend>0;
@@ -2132,6 +2133,25 @@ function App(){
   var activeProvider=(aiCfg.provider||"builtin").toLowerCase();
   var activeProviderAuth=getAiProviderAuthState_(aiAuth,activeProvider);
   var activeProviderAuthMeta=aiAuthMeta_(activeProviderAuth.state);
+
+  function ImportHintCard(props){
+    var compact=!!(props&&props.compact);
+    return h("div",{className:"card",style:{borderLeft:"3px solid #185fa5",background:"linear-gradient(135deg,#f8fbff 0%,#ffffff 100%)",marginBottom:compact?0:12}},
+      h("div",{style:{display:"flex",gap:12,alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap"}},
+        h("div",null,
+          h("div",{style:{fontSize:14,fontWeight:600,marginBottom:4,color:"#0f172a"}},"Tool tip: import data dulu"),
+          h("div",{style:{fontSize:13,color:"#5d6b7d",lineHeight:1.6,marginBottom:10}},"Agar analisa bisa berjalan, upload CSV Campaign, Ad Set, dan Ad minimal sekali. Setelah data masuk, dashboard, rekomendasi, dan analitik akan otomatis terisi."),
+          h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8,fontSize:12,color:"#334155",marginBottom:10}},
+            h("div",{style:{padding:"10px 12px",borderRadius:10,background:"#eff6ff",border:"1px solid #dbeafe"}},"1. Klik tombol Import"),
+            h("div",{style:{padding:"10px 12px",borderRadius:10,background:"#eff6ff",border:"1px solid #dbeafe"}},"2. Upload CSV per level"),
+            h("div",{style:{padding:"10px 12px",borderRadius:10,background:"#eff6ff",border:"1px solid #dbeafe"}},"3. Jalankan analisa"),
+          ),
+          h("div",{style:{fontSize:12,color:"#6b7280"}},"Tips: mulai dari export Meta Ads Manager untuk Campaign, Ad Set, lalu Ad agar hasil analisa lebih lengkap.")
+        ),
+        canUseImport&&h("button",{className:"btnp",onClick:function(){setTab("Import");},style:{whiteSpace:"nowrap"}},"Buka Import")
+      )
+    );
+  }
 
   function runAI(){
     if(!aiInput.trim())return;
@@ -2405,7 +2425,8 @@ function App(){
         )
       ),
 
-      !hasData&&h("div",{style:{color:"#888",fontSize:13,padding:"16px 0"}},"Belum ada data. Klik Import untuk upload CSV dari Meta Ads."),
+      showImportHint&&h(ImportHintCard,null),
+      !hasData&&h("div",{style:{color:"#888",fontSize:13,padding:"8px 0 16px"}},"Belum ada data hasil import. Setelah upload CSV, ringkasan performa akan muncul di sini."),
       urgentCount>0&&h("div",{className:"card",style:{borderLeft:"3px solid #e24b4a",cursor:isDashboardOnlyUser?"default":"pointer"},onClick:isDashboardOnlyUser?null:function(){setTab("Rekomendasi");}},
         h("div",{style:{fontWeight:500,color:"#993c1d"}},"Butuh aksi segera: "+urgentCount+" item"),
         h("div",{style:{fontSize:12,color:"#888",marginTop:4}},"Lihat rekomendasi ->")
@@ -2427,7 +2448,8 @@ function App(){
           buildExportButton("rekomendasi","Download Excel",exportRekomendasiExcel,filtered.length===0)
         )
       ),
-      !hasData&&h("div",{style:{color:"#888",fontSize:13}},"Belum ada data."),
+      showImportHint&&h(ImportHintCard,{compact:true}),
+      !hasData&&h("div",{style:{color:"#888",fontSize:13}},"Belum ada data untuk ditampilkan."),
       (function(){
         var totalPages=Math.ceil(filtered.length/ITEMS_PER_PAGE_RECS);
         var start=rekomendasiPageItems*ITEMS_PER_PAGE_RECS;
@@ -2676,7 +2698,10 @@ function App(){
         h("div",{style:{fontSize:14,fontWeight:500}},"Analitik"),
         buildExportButton("analitik","Download Excel",exportAnalitikExcel,!hasData)
       ),
-      !hasData?h("div",{style:{color:"#888",fontSize:13}},"Belum ada data."):h("div",null,
+      !hasData?h("div",null,
+        showImportHint&&h(ImportHintCard,{compact:true}),
+        h("div",{style:{color:"#888",fontSize:13}},"Belum ada data untuk dianalisa.")
+      ):h("div",null,
         h("div",{className:"row",style:{flexWrap:"wrap",marginBottom:16}},
           metricOpts.map(function(m){
             return h("button",{key:m.key,onClick:function(){setAnalyticsMetric(m.key);},style:{fontWeight:analyticsMetric===m.key?500:400,background:analyticsMetric===m.key?"#f0f0ee":"transparent"}},m.label);
