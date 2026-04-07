@@ -982,7 +982,7 @@ if ($method === 'OPTIONS') {
   exit;
 }
 
-if ($uriPath === '/oauth/openai/login' || $uriPath === '/oauth/openai/logout' || $uriPath === '/oauth/openai/verify') {
+if ($uriPath === '/oauth/openai/login' || $uriPath === '/oauth/openai/verify') {
   fail('OAuth endpoint is not available in PHP MySQL mode', 501);
 }
 
@@ -1517,6 +1517,42 @@ try {
     $revokeStmt->execute([':user_id' => $resetRecord['user_id']]);
 
     out(['ok' => true, 'message' => 'Password berhasil direset. Silakan login dengan password baru Anda.']);
+  }
+
+  if ($method === 'GET' && ($uriPath === '/oauth/openai/start' || $uriPath === '/oauth/openai/login')) {
+    $returnTo = trim((string)($payload['return_to'] ?? '/'));
+    if ($returnTo === '' || $returnTo[0] !== '/') {
+      $returnTo = '/';
+    }
+    $sep = (strpos($returnTo, '?') === false) ? '?' : '&';
+    $target = $returnTo . $sep
+      . 'oauth_provider=openai'
+      . '&oauth_status=error'
+      . '&oauth_error=' . rawurlencode('OpenAI OAuth belum dikonfigurasi di mode PHP MySQL');
+    header('Location: ' . $target, true, 302);
+    exit;
+  }
+
+  if ($method === 'GET' && ($uriPath === '/oauth/openai/status' || $uriPath === '/oauth/openai/verify')) {
+    $oauthUser = requireAuth($db, $payload);
+    out([
+      'ok' => true,
+      'connected' => false,
+      'provider' => 'openai',
+      'mode' => 'php-mysql',
+      'message' => 'OpenAI OAuth belum dikonfigurasi di mode ini',
+      'user_id' => (string)($oauthUser['id'] ?? ''),
+    ]);
+  }
+
+  if ($method === 'POST' && $uriPath === '/oauth/openai/logout') {
+    requireAuth($db, $payload);
+    out([
+      'ok' => true,
+      'connected' => false,
+      'provider' => 'openai',
+      'message' => 'Session OpenAI OAuth diputus',
+    ]);
   }
 
   $currentUser = null;
