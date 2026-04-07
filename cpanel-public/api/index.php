@@ -95,11 +95,9 @@ function loadEnv(): array {
 }
 
 function pdo(array $env): PDO {
-  static $db = null;
-  if ($db instanceof PDO) {
-    return $db;
-  }
-
+  // Create new connection for each request to avoid prepared statement cache issues
+  // This is especially important after schema changes
+  
   $host = envGet($env, 'DB_HOST', '127.0.0.1');
   $port = envGet($env, 'DB_PORT', '3306');
   $name = envGet($env, 'DB_NAME');
@@ -118,11 +116,18 @@ function pdo(array $env): PDO {
     PDO::ATTR_EMULATE_PREPARES => false,
   ]);
   
-  // Clear any cached prepared statements after schema changes
+  // Reset session and clear prepared statement cache
   try {
-    $db->exec('FLUSH TABLES');
+    // MySQL 8.0+: Reset the session to clear any cached state
+    $db->exec('RESET CONNECTION');
   } catch (Exception $e) {
-    // Ignore flush errors, connection is still valid
+    // Fallback for MySQL 5.7 or MariaDB
+    try {
+      $db->exec('FLUSH TABLES');
+      $db->exec('FLUSH PRIVILEGES');
+    } catch (Exception $e2) {
+      // Ignore if these commands fail
+    }
   }
   
   return $db;
