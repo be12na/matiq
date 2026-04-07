@@ -1049,23 +1049,12 @@ try {
     $hash = password_hash($password, PASSWORD_BCRYPT);
     $now = utcNowMs();
 
-    $stmt = $db->prepare(
-      'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
-       VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :mailketing_list_id, :created_at, :updated_at, :last_login, 1)'
-    );
-    $stmt->execute([
-      ':id' => $userId,
-      ':email' => $email,
-      ':password_hash' => $hash,
-      ':salt' => $salt,
-      ':name' => $name !== '' ? $name : 'Admin',
-      ':role' => 'admin',
-      ':payment_status' => 'LUNAS',
-      ':mailketing_list_id' => null,
-      ':created_at' => $now,
-      ':updated_at' => $now,
-      ':last_login' => null,
-    ]);
+    // Use direct query to avoid prepared statement cache issues
+    $sql = "INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
+            VALUES ({$db->quote($userId)}, {$db->quote($email)}, {$db->quote($hash)}, {$db->quote($salt)}, 
+                    {$db->quote($name !== '' ? $name : 'Admin')}, {$db->quote('admin')}, {$db->quote('LUNAS')}, NULL,
+                    {$db->quote($now)}, {$db->quote($now)}, NULL, 1)";
+    $db->exec($sql);
 
     $escapedUserId = $db->quote($userId);
     $u = $db->query("SELECT * FROM users WHERE id = {$escapedUserId}")->fetch();
@@ -1108,23 +1097,13 @@ try {
     try {
       $db->beginTransaction();
       $listId = trim((string)($payload['mailketing_list_id'] ?? ''));
-      $ins = $db->prepare(
-        'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
-         VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :mailketing_list_id, :created_at, :updated_at, :last_login, 1)'
-      );
-      $ins->execute([
-        ':id' => $userId,
-        ':email' => $email,
-        ':password_hash' => $hash,
-        ':salt' => $salt,
-        ':name' => $name,
-        ':role' => 'user',
-        ':payment_status' => 'NONE',
-        ':mailketing_list_id' => $listId !== '' ? $listId : null,
-        ':created_at' => $now,
-        ':updated_at' => $now,
-        ':last_login' => null,
-      ]);
+      // Use direct query to avoid prepared statement cache issues
+      $inscStr = "INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
+                  VALUES ({$db->quote($userId)}, {$db->quote($email)}, {$db->quote($hash)}, {$db->quote($salt)}, 
+                          {$db->quote($name)}, {$db->quote('user')}, {$db->quote('NONE')}, " . 
+                  ($listId !== '' ? $db->quote($listId) : 'NULL') . ",
+                          {$db->quote($now)}, {$db->quote($now)}, NULL, 1)";
+      $db->exec($inscStr);
 
       try {
         $cins = $db->prepare(
