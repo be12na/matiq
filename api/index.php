@@ -521,11 +521,14 @@ function parseMetaCsvPayload(string $csv, string $levelHint): array {
   return ['level' => $level, 'rows' => $parsed];
 }
 
-function snapshotEntities(PDO $db): array {
-  $entities = [];
 
-  $campaigns = $db->query('SELECT * FROM campaigns ORDER BY created_at DESC')->fetchAll();
-  foreach ($campaigns as $r) {
+function snapshotEntities(PDO $db, $userId = null): array {
+  $entities = [];
+  if ($userId === null) return $entities;
+
+  $campaigns = $db->prepare('SELECT * FROM campaigns WHERE user_id = :user_id ORDER BY created_at DESC');
+  $campaigns->execute([':user_id' => $userId]);
+  foreach ($campaigns->fetchAll() as $r) {
     $m = [
       'spend' => (float)$r['spend'],
       'impressions' => (int)$r['impressions'],
@@ -565,8 +568,9 @@ function snapshotEntities(PDO $db): array {
     ];
   }
 
-  $adsets = $db->query('SELECT * FROM adsets ORDER BY created_at DESC')->fetchAll();
-  foreach ($adsets as $r) {
+  $adsets = $db->prepare('SELECT * FROM adsets WHERE user_id = :user_id ORDER BY created_at DESC');
+  $adsets->execute([':user_id' => $userId]);
+  foreach ($adsets->fetchAll() as $r) {
     $m = [
       'spend' => (float)$r['spend'],
       'impressions' => (int)$r['impressions'],
@@ -606,8 +610,9 @@ function snapshotEntities(PDO $db): array {
     ];
   }
 
-  $ads = $db->query('SELECT * FROM ads ORDER BY created_at DESC')->fetchAll();
-  foreach ($ads as $r) {
+  $ads = $db->prepare('SELECT * FROM ads WHERE user_id = :user_id ORDER BY created_at DESC');
+  $ads->execute([':user_id' => $userId]);
+  foreach ($ads->fetchAll() as $r) {
     $m = [
       'spend' => (float)$r['spend'],
       'impressions' => (int)$r['impressions'],
@@ -2037,7 +2042,7 @@ try {
   }
 
   if ($method === 'GET' && $uriPath === '/app/snapshot') {
-    $entities = snapshotEntities($db);
+    $entities = snapshotEntities($db, $currentUser['id']);
     $thresholdsRaw = $db->query('SELECT metric_key, enabled, rule_type, value, label FROM thresholds ORDER BY metric_key ASC')->fetchAll();
     $thresholds = [];
     foreach ($thresholdsRaw as $t) {
@@ -2102,21 +2107,24 @@ try {
     $periodLabel = trim((string)($payload['period_label'] ?? ''));
     $now = utcNowMs();
 
-    $table = $level === 'campaign' ? 'campaigns' : ($level === 'adset' ? 'adsets' : 'ads');
 
+    $table = $level === 'campaign' ? 'campaigns' : ($level === 'adset' ? 'adsets' : 'ads');
+    $userId = $currentUser['id'];
     $db->beginTransaction();
-    $db->exec("DELETE FROM {$table}");
+    // Hapus hanya data milik user aktif
+    $delStmt = $db->prepare("DELETE FROM {$table} WHERE user_id = :user_id");
+    $delStmt->execute([':user_id' => $userId]);
 
     if ($level === 'campaign') {
       $stmt = $db->prepare(
-        'INSERT INTO campaigns (id, import_batch_id, period_label, campaign_name, spend, impressions, ctr, results, revenue, roas, cpm, reach, freq, atc, cpa, date_start, date_end, created_at)
-         VALUES (:id, :import_batch_id, :period_label, :campaign_name, :spend, :impressions, :ctr, :results, :revenue, :roas, :cpm, :reach, :freq, :atc, :cpa, :date_start, :date_end, :created_at)'
+        'INSERT INTO campaigns (id, user_id, import_batch_id, period_label, campaign_name, spend, impressions, ctr, results, revenue, roas, cpm, reach, freq, atc, cpa, date_start, date_end, created_at)
+         VALUES (:id, :user_id, :import_batch_id, :period_label, :campaign_name, :spend, :impressions, :ctr, :results, :revenue, :roas, :cpm, :reach, :freq, :atc, :cpa, :date_start, :date_end, :created_at)'
       );
-
       foreach ($rows as $i => $r) {
         $id = substr(hash('sha256', $batchId . '|' . $i . '|' . $r['name']), 0, 64);
         $stmt->execute([
           ':id' => $id,
+          ':user_id' => $userId,
           ':import_batch_id' => $batchId,
           ':period_label' => $periodLabel,
           ':campaign_name' => (string)($r['campaign_name'] !== '' ? $r['campaign_name'] : $r['name']),
@@ -2138,14 +2146,14 @@ try {
       }
     } elseif ($level === 'adset') {
       $stmt = $db->prepare(
-        'INSERT INTO adsets (id, import_batch_id, period_label, campaign_name, adset_name, spend, impressions, ctr, results, revenue, roas, cpm, reach, freq, atc, cpa, date_start, date_end, created_at)
-         VALUES (:id, :import_batch_id, :period_label, :campaign_name, :adset_name, :spend, :impressions, :ctr, :results, :revenue, :roas, :cpm, :reach, :freq, :atc, :cpa, :date_start, :date_end, :created_at)'
+        'INSERT INTO adsets (id, user_id, import_batch_id, period_label, campaign_name, adset_name, spend, impressions, ctr, results, revenue, roas, cpm, reach, freq, atc, cpa, date_start, date_end, created_at)
+         VALUES (:id, :user_id, :import_batch_id, :period_label, :campaign_name, :adset_name, :spend, :impressions, :ctr, :results, :revenue, :roas, :cpm, :reach, :freq, :atc, :cpa, :date_start, :date_end, :created_at)'
       );
-
       foreach ($rows as $i => $r) {
         $id = substr(hash('sha256', $batchId . '|' . $i . '|' . $r['name']), 0, 64);
         $stmt->execute([
           ':id' => $id,
+          ':user_id' => $userId,
           ':import_batch_id' => $batchId,
           ':period_label' => $periodLabel,
           ':campaign_name' => (string)$r['campaign_name'],
@@ -2168,14 +2176,14 @@ try {
       }
     } else {
       $stmt = $db->prepare(
-        'INSERT INTO ads (id, import_batch_id, period_label, campaign_name, adset_name, ad_name, spend, impressions, ctr, results, revenue, roas, cpm, reach, freq, atc, cpa, date_start, date_end, created_at)
-         VALUES (:id, :import_batch_id, :period_label, :campaign_name, :adset_name, :ad_name, :spend, :impressions, :ctr, :results, :revenue, :roas, :cpm, :reach, :freq, :atc, :cpa, :date_start, :date_end, :created_at)'
+        'INSERT INTO ads (id, user_id, import_batch_id, period_label, campaign_name, adset_name, ad_name, spend, impressions, ctr, results, revenue, roas, cpm, reach, freq, atc, cpa, date_start, date_end, created_at)
+         VALUES (:id, :user_id, :import_batch_id, :period_label, :campaign_name, :adset_name, :ad_name, :spend, :impressions, :ctr, :results, :revenue, :roas, :cpm, :reach, :freq, :atc, :cpa, :date_start, :date_end, :created_at)'
       );
-
       foreach ($rows as $i => $r) {
         $id = substr(hash('sha256', $batchId . '|' . $i . '|' . $r['name']), 0, 64);
         $stmt->execute([
           ':id' => $id,
+          ':user_id' => $userId,
           ':import_batch_id' => $batchId,
           ':period_label' => $periodLabel,
           ':campaign_name' => (string)$r['campaign_name'],

@@ -6,8 +6,10 @@
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 
+
 CREATE TABLE IF NOT EXISTS `campaigns` (
   `id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) NOT NULL,
   `import_batch_id` VARCHAR(64) DEFAULT NULL,
   `period_label` VARCHAR(64) DEFAULT NULL,
   `campaign_name` VARCHAR(255) NOT NULL,
@@ -26,13 +28,17 @@ CREATE TABLE IF NOT EXISTS `campaigns` (
   `date_end` VARCHAR(32) DEFAULT NULL,
   `created_at` DATETIME(3) NOT NULL,
   PRIMARY KEY (`id`),
+  KEY `idx_campaigns_user_id` (`user_id`),
   KEY `idx_campaigns_import_batch` (`import_batch_id`),
   KEY `idx_campaigns_name` (`campaign_name`),
-  KEY `idx_campaigns_created_at` (`created_at`)
+  KEY `idx_campaigns_created_at` (`created_at`),
+  CONSTRAINT `fk_campaigns_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 CREATE TABLE IF NOT EXISTS `adsets` (
   `id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) NOT NULL,
   `import_batch_id` VARCHAR(64) DEFAULT NULL,
   `period_label` VARCHAR(64) DEFAULT NULL,
   `campaign_name` VARCHAR(255) NOT NULL,
@@ -52,14 +58,18 @@ CREATE TABLE IF NOT EXISTS `adsets` (
   `date_end` VARCHAR(32) DEFAULT NULL,
   `created_at` DATETIME(3) NOT NULL,
   PRIMARY KEY (`id`),
+  KEY `idx_adsets_user_id` (`user_id`),
   KEY `idx_adsets_import_batch` (`import_batch_id`),
   KEY `idx_adsets_campaign_name` (`campaign_name`),
   KEY `idx_adsets_name` (`adset_name`),
-  KEY `idx_adsets_created_at` (`created_at`)
+  KEY `idx_adsets_created_at` (`created_at`),
+  CONSTRAINT `fk_adsets_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 CREATE TABLE IF NOT EXISTS `ads` (
   `id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) NOT NULL,
   `import_batch_id` VARCHAR(64) DEFAULT NULL,
   `period_label` VARCHAR(64) DEFAULT NULL,
   `campaign_name` VARCHAR(255) NOT NULL,
@@ -80,11 +90,13 @@ CREATE TABLE IF NOT EXISTS `ads` (
   `date_end` VARCHAR(32) DEFAULT NULL,
   `created_at` DATETIME(3) NOT NULL,
   PRIMARY KEY (`id`),
+  KEY `idx_ads_user_id` (`user_id`),
   KEY `idx_ads_import_batch` (`import_batch_id`),
   KEY `idx_ads_campaign_name` (`campaign_name`),
   KEY `idx_ads_adset_name` (`adset_name`),
   KEY `idx_ads_name` (`ad_name`),
-  KEY `idx_ads_created_at` (`created_at`)
+  KEY `idx_ads_created_at` (`created_at`),
+  CONSTRAINT `fk_ads_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `thresholds` (
