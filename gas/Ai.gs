@@ -183,26 +183,32 @@ function generateLocalAiFallbackAnswer_(question, snapshot, reason) {
   var lines = [];
   lines.push('Mode bawaan aktif (tanpa ketergantungan API eksternal).');
   if (reason) lines.push('Catatan mode: ' + reason + '.');
+  lines.push('Stage aktif: Stage 8 (Launch & Monitoring).');
+  lines.push('Objective stage: menjaga stabilitas learning phase dan quality signal sebelum scaling agresif.');
   lines.push('Ringkasan cepat:');
   lines.push('- Total item: ' + entities.length + ', Urgent: ' + urgent.length + ', Alert: ' + ((snapshot && snapshot.kpi && snapshot.kpi.alert_count) || 0));
 
   if (q.indexOf('pause') >= 0 || q.indexOf('hentikan') >= 0) {
     if (!pausedCandidates.length) {
       lines.push('Tidak ada kandidat pause kritis dari rule saat ini. Lanjutkan monitor 24 jam.');
+      lines.push('Metrik keputusan: belum ada entitas yang memenuhi ROAS < 1 atau Frequency >= 4 dengan spend bermakna.');
     } else {
       lines.push('Prioritas pause hari ini:');
       pausedCandidates.forEach(function (e, i) {
         lines.push((i + 1) + '. ' + e.name + ' [' + e.level + '] | ROAS ' + fmtLocal_(e.metrics.roas) + ' | Freq ' + fmtLocal_(e.metrics.freq) + ' | Spend Rp ' + numLocal_(e.metrics.spend));
       });
+      lines.push('Metrik keputusan: pause kandidat dengan ROAS < 1 atau Frequency >= 4, lalu cek ulang 24 jam setelah perubahan.');
     }
   } else if (q.indexOf('scale') >= 0 || q.indexOf('naik') >= 0) {
     if (!scaleCandidates.length) {
       lines.push('Belum ada kandidat scale kuat (ROAS >= 3). Fokus maintenance + test creative.');
+      lines.push('Metrik keputusan: pertahankan budget sampai ada kandidat ROAS >= 3 dengan CTR sehat.');
     } else {
       lines.push('Kandidat scale:');
       scaleCandidates.forEach(function (e, i) {
         lines.push((i + 1) + '. ' + e.name + ' [' + e.level + '] | ROAS ' + fmtLocal_(e.metrics.roas) + ' | CTR ' + fmtLocal_(e.metrics.ctr) + '%');
       });
+      lines.push('Metrik keputusan: naikkan budget bertahap 20-30% per minggu untuk kandidat dengan ROAS stabil.');
     }
   } else {
     lines.push('Top prioritas eksekusi:');
@@ -210,8 +216,11 @@ function generateLocalAiFallbackAnswer_(question, snapshot, reason) {
       lines.push((i + 1) + '. ' + e.name + ' - ' + e.status + ' | Action: ' + e.action);
     });
     if (!urgent.length) lines.push('- Tidak ada item urgent saat ini. Lanjutkan monitor dan optimasi bertahap.');
+    lines.push('Metrik keputusan: gunakan ROAS, CTR, CPC, CPM, Frequency, dan Cost per Result untuk kill/keep/scale.');
   }
 
+  lines.push('Message-match check: pastikan benefit utama di ads konsisten dengan hero dan CTA landing page.');
+  lines.push('Next action: pilih 1 tindakan hari ini (pause/scale/test creative), eksekusi, lalu evaluasi ulang pada cycle berikutnya.');
   lines.push('Anda tetap bisa mengisi API key OpenAI/Gemini/Claude di Settings kapan saja untuk mode eksternal.');
   return lines.join('\n');
 }

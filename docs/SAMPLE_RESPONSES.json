@@ -76,7 +76,7 @@
   },
   "ask_ai": {
     "ok": true,
-    "answer": "Prioritas hari ini: pause 2 ad dengan ROAS < 1 dan frequency > 4, scale 1 ad dengan ROAS > 3 dan CTR > 2.5."
+    "answer": "Stage aktif: Stage 8 (Launch & Monitoring).\nObjective stage: menjaga stabilitas learning phase dan quality signal sebelum scaling agresif.\n\nRingkasan cepat:\n- Total item: 18, Urgent: 9, Alert: 12\n\nPrioritas / keputusan:\n1. Pause Ad A [ad] | ROAS 0.72 | Freq 4.60 | Spend Rp 450.000\n2. Scale Ad B [ad] | ROAS 3.41 | CTR 2.73%\n\nMetrik keputusan:\n- Kill/Keep/Scale berdasarkan ROAS, CTR, CPC, CPM, Frequency, Cost per Result\n\nMessage-match check:\n- Benefit ads sinkron dengan hero + proof + CTA landing page\n\nNext action:\n- Eksekusi 1 perubahan prioritas hari ini, lalu evaluasi ulang 24 jam berikutnya."
   },
   "error": {
     "ok": false,
