@@ -521,6 +521,48 @@ function parseMetaCsvPayload(string $csv, string $levelHint): array {
   return ['level' => $level, 'rows' => $parsed];
 }
 
+function csvCellEscape(string $value): string {
+  return '"' . str_replace('"', '""', $value) . '"';
+}
+
+function buildImportTemplateCsv(string $level): array {
+  $templates = [
+    'campaign' => [
+      ['Nama Kampanye', 'Jumlah yang dibelanjakan (IDR)', 'Impresi', 'CTR (Rasio Klik Tayang Tautan)', 'Hasil', 'Nilai konversi pembelian', 'ROAS (imbal hasil belanja iklan) pembelian', 'CPM (Biaya Per 1.000 Tayangan) (IDR)', 'Jangkauan', 'Frekuensi', 'Tambahkan ke Keranjang', 'Biaya per Hasil', 'Awal pelaporan', 'Akhir pelaporan'],
+      ['Campaign Ramadan - Konversi', '1250000', '50234', '2.48', '37', '3980000', '3.18', '24886', '40211', '1.25', '92', '33784', '2026-04-01', '2026-04-07'],
+      ['Campaign Prospek - WhatsApp', '780000', '31890', '1.92', '21', '1850000', '2.37', '24460', '26750', '1.19', '54', '37143', '2026-04-08', '2026-04-14'],
+    ],
+    'adset' => [
+      ['Nama Kampanye', 'Nama Set Iklan', 'Jumlah yang dibelanjakan (IDR)', 'Impresi', 'CTR (Rasio Klik Tayang Tautan)', 'Hasil', 'Nilai konversi pembelian', 'ROAS (imbal hasil belanja iklan) pembelian', 'CPM (Biaya Per 1.000 Tayangan) (IDR)', 'Jangkauan', 'Frekuensi', 'Tambahkan ke Keranjang', 'Biaya per Hasil', 'Awal pelaporan', 'Akhir pelaporan'],
+      ['Campaign Ramadan - Konversi', 'Adset Broad 18-34', '640000', '25210', '2.61', '19', '2100000', '3.28', '25387', '20650', '1.22', '41', '33684', '2026-04-01', '2026-04-07'],
+      ['Campaign Ramadan - Konversi', 'Adset Lookalike Purchaser', '610000', '25024', '2.35', '18', '1880000', '3.08', '24378', '19561', '1.28', '51', '33889', '2026-04-01', '2026-04-07'],
+    ],
+    'ad' => [
+      ['Nama Kampanye', 'Nama Set Iklan', 'Nama Iklan', 'Jumlah yang dibelanjakan (IDR)', 'Impresi', 'CTR (Rasio Klik Tayang Tautan)', 'Hasil', 'Nilai konversi pembelian', 'ROAS (imbal hasil belanja iklan) pembelian', 'CPM (Biaya Per 1.000 Tayangan) (IDR)', 'Jangkauan', 'Frekuensi', 'Tambahkan ke Keranjang', 'Biaya per Hasil', 'Awal pelaporan', 'Akhir pelaporan'],
+      ['Campaign Ramadan - Konversi', 'Adset Broad 18-34', 'Video UGC Hook A', '355000', '14120', '2.84', '11', '1240000', '3.49', '25142', '12032', '1.17', '23', '32273', '2026-04-01', '2026-04-07'],
+      ['Campaign Ramadan - Konversi', 'Adset Broad 18-34', 'Carousel Benefit B', '285000', '11090', '2.33', '8', '860000', '3.02', '25699', '9450', '1.21', '18', '35625', '2026-04-01', '2026-04-07'],
+    ],
+  ];
+
+  if (!isset($templates[$level])) {
+    fail('Level template tidak valid', 400);
+  }
+
+  $rows = $templates[$level];
+  $lines = [];
+  foreach ($rows as $row) {
+    $cells = array_map(static function ($cell) {
+      return csvCellEscape((string)$cell);
+    }, $row);
+    $lines[] = implode(',', $cells);
+  }
+
+  return [
+    'file_name' => 'template_import_' . $level . '.csv',
+    'csv_text' => implode("\n", $lines),
+  ];
+}
+
 
 function snapshotEntities(PDO $db, $userId = null): array {
   $entities = [];
@@ -2075,6 +2117,28 @@ try {
         'notes' => $notes,
         'settings' => $settings,
         'import_logs' => $importLogs,
+      ],
+    ]);
+  }
+
+  if ($method === 'GET' && $uriPath === '/app/import-template') {
+    requireImportAccess($currentUser);
+
+    $level = strtolower(trim((string)($payload['level'] ?? 'campaign')));
+    if (!in_array($level, ['campaign', 'adset', 'ad'], true)) {
+      fail('Level template tidak valid', 400);
+    }
+
+    $template = buildImportTemplateCsv($level);
+    out([
+      'ok' => true,
+      'level' => $level,
+      'file_name' => $template['file_name'],
+      'csv_text' => $template['csv_text'],
+      'notes' => [
+        'Gunakan format CSV (UTF-8) dengan separator koma (,).',
+        'Header tidak boleh diubah agar parser dapat membaca otomatis.',
+        'Tanggal disarankan format YYYY-MM-DD.',
       ],
     ]);
   }

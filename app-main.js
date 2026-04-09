@@ -2005,6 +2005,31 @@ function App(){
     rd.readAsText(file);
   }
 
+  function downloadImportTemplate(level){
+    var lv=String(level||"").toLowerCase();
+    if(["campaign","adset","ad"].indexOf(lv)<0)return;
+    setLiveMsg("Menyiapkan template "+lv+"...");
+    req("/app/import-template?level="+encodeURIComponent(lv),"GET")
+      .then(function(res){
+        var csvText=String(res&&res.csv_text||"");
+        if(!csvText){throw new Error("Template kosong dari server");}
+        var fileName=String(res&&res.file_name||("template_import_"+lv+".csv"));
+        var blob=new Blob([csvText],{type:"text/csv;charset=utf-8;"});
+        var url=URL.createObjectURL(blob);
+        var a=document.createElement("a");
+        a.href=url;
+        a.download=fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+        setLiveMsg("Template "+lv+" berhasil diunduh.");
+      })
+      .catch(function(err){
+        setLiveMsg("Gagal download template "+lv+": "+sanitizePublicError(err&&err.message?err.message:"Unknown error"));
+      });
+  }
+
   function confirmImport(){
     var levels=["campaign","adset","ad"];
     var hasAny=levels.some(function(l){return !!imports[l];});
@@ -2755,12 +2780,15 @@ function App(){
     // IMPORT
     tab==="Import"&&h("div",null,
       h("div",{style:{fontSize:14,fontWeight:500,marginBottom:4}},"Import dari Meta Ads"),
-      h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Upload CSV terpisah per level. File diproses live ke database MySQL via API server."),
+      h("div",{style:{fontSize:13,color:"#888",marginBottom:16}},"Upload CSV terpisah per level. Download template agar kolom metrik sesuai parser dan hasil analisa Dashboard lebih lengkap."),
       [{key:"campaign",label:"Campaign Level",desc:"View Campaign di Ads Manager -> Export"},{key:"adset",label:"Ad Set Level",desc:"View Ad Sets -> Export"},{key:"ad",label:"Ad Level",desc:"View Ads -> Export"}].map(function(item){
         return h("div",{key:item.key,className:"card"},
           h("div",{className:"row",style:{justifyContent:"space-between",marginBottom:8}},
             h("div",null,h("div",{style:{fontWeight:500,fontSize:13}},item.label),h("div",{style:{fontSize:12,color:"#888"}},item.desc)),
-            h("button",{className:"btnp",onClick:function(){fRefs[item.key].current.click();}},imports[item.key]?"Siap: "+imports[item.key].name:"Upload CSV")
+            h("div",{className:"row",style:{gap:8}},
+              h("button",{className:"btnp",onClick:function(){downloadImportTemplate(item.key);}},"Download Template"),
+              h("button",{className:"btnp",onClick:function(){fRefs[item.key].current.click();}},imports[item.key]?"Siap: "+imports[item.key].name:"Upload CSV")
+            )
           ),
           h("input",{ref:fRefs[item.key],type:"file",accept:".csv",style:{display:"none"},onChange:function(e){handleFile(e,item.key);}}),
           importMsgs[item.key]&&h("div",{style:{padding:"5px 8px",borderRadius:6,background:importMsgs[item.key].startsWith("OK")?"#e1f5ee":"#faeeda",color:importMsgs[item.key].startsWith("OK")?"#0f6e56":"#854f0b",fontSize:12}},importMsgs[item.key])
