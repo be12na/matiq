@@ -1,0 +1,104 @@
+; ===============================================
+; META ADS TRACKER - PHP.INI PRODUCTION
+; For cPanel Shared Hosting
+; ===============================================
+
+; ---------------------------------------------
+; ERROR DISPLAY & LOGGING
+; ---------------------------------------------
+display_errors = Off
+display_startup_errors = Off
+log_errors = On
+error_log = /home/username/public_html/php_errors.log
+log_errors_max_len = 4096
+ignore_repeated_errors = Off
+ignore_repeated_source = Off
+report_memleaks = On
+
+; ---------------------------------------------
+; FILE UPLOADS
+; ---------------------------------------------
+file_uploads = On
+upload_max_filesize = 20M
+post_max_size = 25M
+max_file_uploads = 20
+
+; ---------------------------------------------
+; MEMORY & EXECUTION
+; ---------------------------------------------
+memory_limit = 256M
+max_execution_time = 300
+max_input_time = 300
+
+; ---------------------------------------------
+; SESSIONS
+; ---------------------------------------------
+session.save_handler = files
+session.save_path = "/tmp"
+session.use_only_cookies = 1
+session.use_strict_mode = 1
+session.cookie_httponly = 1
+session.cookie_secure = 0 ; Set to 1 if HTTPS
+session.cookie_samesite = Strict
+session.cookie_lifetime = 0
+session.gc_maxlifetime = 14400 ; 4 hours
+session.gc_probability = 1
+session.gc_divisor = 100
+
+; ---------------------------------------------
+; TIMEZONE
+; ---------------------------------------------
+date.timezone = Asia/Jakarta
+
+; ---------------------------------------------
+; OUTPUT BUFFERING
+; ---------------------------------------------
+output_buffering = 4096
+
+; ---------------------------------------------
+; INTERNAL ENCODING
+; ---------------------------------------------
+default_charset = UTF-8
+internal_encoding = UTF-8
+mbstring.language = Neutral
+mbstring.internal_encoding = UTF-8
+mbstring.func_overload = 0
+
+; ---------------------------------------------
+; CURL & NETWORK
+; ---------------------------------------------
+curl.cainfo = /etc/ssl/certs/ca-certificates.crt
+
+; ---------------------------------------------
+; OPENSSL
+; ---------------------------------------------
+openssl.capath = /etc/ssl/certs
+openssl.cafile = /etc/ssl/certs/ca-certificates.crt
+
+; --------------------------------=============
+; DISABLE FUNCTIONS (Security)
+; ==============================================
+; Note: cPanel may not allow disable_functions
+; If available,disable dangerous functions:
+
+; disable_functions = exec,passthru,shell_exec,system,proc_open,popen,curl_exec,curl_multi_exec,parse_ini_file,displays_errors
+
+; ---------------------------------------------
+; ALLOW URL FOPEN
+; ---------------------------------------------
+allow_url_fopen = On
+allow_url_include = Off
+
+; ---------------------------------------------
+; EXPOSED PHP
+; ---------------------------------------------
+expose_php = Off
+
+; ---------------------------------------------
+; ERROR REPORTING
+; ---------------------------------------------
+error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+
+; ===============================================
+; END OF PHP.INI PRODUCTION
+; ===============================================

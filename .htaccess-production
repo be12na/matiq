@@ -1,0 +1,192 @@
+# ===============================================
+# META ADS TRACKER - PRODUCTION .HTACCESS
+# Optimized for cPanel Shared Hosting
+# ===============================================
+
+# ---------------------------------------------
+# 1. SECURITY HEADERS
+# ---------------------------------------------
+<IfModule mod_headers.c>
+    # Prevent clickjacking
+    Header always set X-Frame-Options "SAMEORIGIN"
+    
+    # Prevent MIME sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    
+    # XSS Protection
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Referrer Policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    
+    # Remove server identification
+    Header unset X-Powered-By
+    Header always unset X-Powered-By
+    
+    # Content Security Policy (strict but functional)
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:; font-src 'self' data:; frame-ancestors 'self';"
+    
+    # HSTS (Uncomment if you have SSL properly configured)
+    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    
+    # CORS for API
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Authorization, Content-Type, X-Requested-With"
+    
+    # Cache static assets (handled by browser)
+    <FilesMatch "\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    
+    # No cache for HTML
+    <FilesMatch "\.html$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </FilesMatch>
+</IfModule>
+
+# ---------------------------------------------
+# 2. PHP CONFIGURATION
+# ---------------------------------------------
+<IfModule mod_php7.c>
+    php_flag display_errors off
+    php_flag log_errors on
+    php_value max_execution_time 300
+    php_value memory_limit 256M
+    php_value upload_max_filesize 20M
+    php_value post_max_size 25M
+    php_value session.cookie_httponly 1
+    php_value session.use_only_cookies 1
+    php_value session.cookie_secure 0 ; Set to 1 if HTTPS
+</IfModule>
+
+# ---------------------------------------------
+# 3. INDEXES AND SIGNATURES
+# ---------------------------------------------
+Options -Indexes
+ServerSignature Off
+IndexIgnore *
+
+# ---------------------------------------------
+# 4. URL REWRITING
+# ---------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # -------------------------------------
+    # 4.1 Redirect to HTTPS (Optional - uncomment if SSL available)
+    # RewriteCond %{HTTPS} off
+    # RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [L,R=301]
+    # -------------------------------------
+    
+    # -------------------------------------
+    # 4.2 Security: Block sensitive files
+    # -------------------------------------
+    RewriteRule "(^|/)\.(env|git|htaccess|htpasswd|ini|log|bak|sql|key|pem|crt|db)" - [F,L,NC]
+    
+    # -------------------------------------
+    # 4.3 Security: Block directories
+    # -------------------------------------
+    RewriteRule ^(database|docs|functions|gas|ops|tests|scripts)(/|$) - [F,L,NC]
+    
+    # -------------------------------------
+    # 4.4 Static files - serve directly
+    # -------------------------------------
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+    
+    # Serve static assets with caching
+    RewriteRule \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ - [L]
+    
+    # -------------------------------------
+    # 4.5 API Routes - route to PHP
+    # -------------------------------------
+    RewriteRule ^(health|auth/.*|admin/.*|user/.*|app/.*|oauth/.*)$ api/index.php [QSA,L]
+    
+    # -------------------------------------
+    # 4.6 Runtime Config Fallback
+    # -------------------------------------
+    RewriteRule ^runtime-config\.js$ runtime-config.php [L]
+    
+    # -------------------------------------
+    # 4.7 SPA Fallback - serve index.html
+    # -------------------------------------
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+# ---------------------------------------------
+# 5. COMPRESSION (GZIP)
+# ---------------------------------------------
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json application/xml
+    AddOutputFilterByType DEFLATE image/svg+xml
+    
+    # Exclude known binaries
+    SetEnvIfNoCase Request_URI "\.(gif|jpe?g|png|ico|svg|woff2?)$" no-gzip dont-vary
+</IfModule>
+
+# ---------------------------------------------
+# 6. BROWSER CACHING (EXPIRES)
+# ---------------------------------------------
+<IfModule mod_expires.c>
+    ExpiresActive On
+    
+    # Default: 1 hour
+    ExpiresDefault "access plus 1 hour"
+    
+    # HTML: no-cache
+    ExpiresByType text/html "access plus 0 seconds"
+    
+    # CSS, JS: 1 year (immutable)
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    
+    # Images: 1 year
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType image/x-icon "access plus 1 year"
+    
+    # Fonts: 1 year
+    ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType font/otf "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+</IfModule>
+
+# ---------------------------------------------
+# 7. RATE LIMITING (Optional - cPanel may not support)
+# ---------------------------------------------
+# <IfModule mod_ratelimit.c>
+#     SetOutputFilter RATE_LIMIT
+#     SetEnv rate-limit 512 ; KB/s limit
+# </IfModule>
+
+# ---------------------------------------------
+# 8. ERROR PAGES (Optional)
+# ---------------------------------------------
+# ErrorDocument 403 /403.html
+# ErrorDocument 404 /404.html
+# ErrorDocument 500 /500.html
+
+# ---------------------------------------------
+# 9. TRACE METHOD DISABLED
+# ---------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_METHOD} ^TRACE [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# ---------------------------------------------
+# 10. METHOD RESTRICTIONS
+# ---------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_METHOD} ^(DELETE|TRACE|OPTIONS) [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# ===============================================
+# END OF PRODUCTION .HTACCESS
+# ===============================================

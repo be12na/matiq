@@ -33,6 +33,14 @@ function envGet(array $env, string $key, string $default = ''): string {
   return $default;
 }
 
+function getPasswordResetSecret(array $env): string {
+  $secret = envGet($env, 'PASSWORD_RESET_SECRET', '');
+  if ($secret === '') {
+    $secret = 'password_reset_secret';
+  }
+  return $secret;
+}
+
 function loadEnv(): array {
   $candidates = [];
   $custom = getenv('MATIQ_ENV_PATH');
@@ -116,7 +124,10 @@ function pdo(array $env): PDO {
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     PDO::ATTR_EMULATE_PREPARES => true,
+    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
   ]);
+  
+  $db->exec('SET SESSION SQL_MODE = "NO_ENGINE_SUBSTITUTION"');
   return $db;
 }
 
@@ -1432,10 +1443,10 @@ try {
 
     // Generate reset token
     $resetToken = bin2hex(random_bytes(32));
-    $hashedToken = hash_hmac('sha256', $resetToken, 'password_reset_secret', false);
+    $hashedToken = hash_hmac('sha256', $resetToken, getPasswordResetSecret($env), false);
     $tokenId = randomId('prt_', 16);
     $now = utcNowMs();
-    $expiresAt = date('Y-m-d H:i:s.u', (time() + (2 * 60 * 60)) * 1000); // 2 hours from now
+    $expiresAt = date('Y-m-d H:i:s.u', time() + (2 * 60 * 60)); // 2 hours from now
 
     // Invalidate old tokens for this user
     $invalidateStmt = $db->prepare('UPDATE password_reset_tokens SET is_used = 1 WHERE user_id = :user_id AND is_used = 0');
@@ -1515,7 +1526,7 @@ try {
     }
 
     // Hash the provided token to compare with stored hash
-    $hashedToken = hash_hmac('sha256', $resetToken, 'password_reset_secret', false);
+    $hashedToken = hash_hmac('sha256', $resetToken, getPasswordResetSecret($env), false);
     
     // Find the reset token
     $tokenStmt = $db->prepare(

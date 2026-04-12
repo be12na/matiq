@@ -33,6 +33,14 @@ function envGet(array $env, string $key, string $default = ''): string {
   return $default;
 }
 
+function getPasswordResetSecret(array $env): string {
+  $secret = envGet($env, 'PASSWORD_RESET_SECRET', '');
+  if ($secret === '') {
+    $secret = 'password_reset_secret';
+  }
+  return $secret;
+}
+
 function loadEnv(): array {
   $candidates = [];
   $custom = getenv('MATIQ_ENV_PATH');
@@ -1182,15 +1190,25 @@ try {
     $hash = password_hash($password, PASSWORD_BCRYPT);
     $now = utcNowMs();
 
-    // Use direct query to avoid prepared statement cache issues
-    $sql = "INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
-            VALUES ({$db->quote($userId)}, {$db->quote($email)}, {$db->quote($hash)}, {$db->quote($salt)}, 
-                    {$db->quote($name !== '' ? $name : 'Admin')}, {$db->quote('admin')}, {$db->quote('LUNAS')}, NULL,
-                    {$db->quote($now)}, {$db->quote($now)}, NULL, 1)";
-    $db->exec($sql);
+    $stmt = $db->prepare(
+      'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
+       VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, NULL, :created_at, :updated_at, NULL, 1)'
+    );
+    $stmt->execute([
+      ':id' => $userId,
+      ':email' => $email,
+      ':password_hash' => $hash,
+      ':salt' => $salt,
+      ':name' => $name !== '' ? $name : 'Admin',
+      ':role' => 'admin',
+      ':payment_status' => 'LUNAS',
+      ':created_at' => $now,
+      ':updated_at' => $now,
+    ]);
 
-    $escapedUserId = $db->quote($userId);
-    $u = $db->query("SELECT * FROM users WHERE id = {$escapedUserId}")->fetch();
+    $userStmt = $db->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');
+    $userStmt->execute([':id' => $userId]);
+    $u = $userStmt->fetch();
     $token = issueSession($db, $u, (int)envGet($env, 'AUTH_TOKEN_TTL_HOURS', '24'));
 
     out(['ok' => true, 'token' => $token, 'user' => userToPublic($u)]);
@@ -1215,8 +1233,9 @@ try {
       fail('Nomor WhatsApp tidak valid', 400);
     }
 
-    $escapedEmail = $db->quote($email);
-    if ($db->query("SELECT id FROM users WHERE email = {$escapedEmail} LIMIT 1")->fetch()) {
+    $existsStmt = $db->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+    $existsStmt->execute([':email' => $email]);
+    if ($existsStmt->fetch()) {
       fail('Email sudah terdaftar', 409);
     }
 
@@ -1230,13 +1249,22 @@ try {
     try {
       $db->beginTransaction();
       $listId = trim((string)($payload['mailketing_list_id'] ?? '88538'));
-      // Use direct query to avoid prepared statement cache issues
-      $inscStr = "INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
-                  VALUES ({$db->quote($userId)}, {$db->quote($email)}, {$db->quote($hash)}, {$db->quote($salt)}, 
-                          {$db->quote($name)}, {$db->quote('user')}, {$db->quote('NONE')}, " . 
-                  ($listId !== '' ? $db->quote($listId) : 'NULL') . ",
-                          {$db->quote($now)}, {$db->quote($now)}, NULL, 1)";
-      $db->exec($inscStr);
+      $stmt = $db->prepare(
+        'INSERT INTO users (id, email, password_hash, salt, name, role, payment_status, mailketing_list_id, created_at, updated_at, last_login, is_active)
+         VALUES (:id, :email, :password_hash, :salt, :name, :role, :payment_status, :mailketing_list_id, :created_at, :updated_at, NULL, 1)'
+      );
+      $stmt->execute([
+        ':id' => $userId,
+        ':email' => $email,
+        ':password_hash' => $hash,
+        ':salt' => $salt,
+        ':name' => $name,
+        ':role' => 'user',
+        ':payment_status' => 'NONE',
+        ':mailketing_list_id' => $listId !== '' ? $listId : null,
+        ':created_at' => $now,
+        ':updated_at' => $now,
+      ]);
 
       try {
         $cins = $db->prepare(
@@ -1511,8 +1539,9 @@ try {
       fail('Format email tidak valid', 400);
     }
 
-    $escapedForgotEmail = $db->quote($email);
-    $user = $db->query("SELECT id, email, name FROM users WHERE email = {$escapedForgotEmail} LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    $userStmt = $db->prepare('SELECT id, email, name FROM users WHERE email = :email LIMIT 1');
+    $userStmt->execute([':email' => $email]);
+    $user = $userStmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$user) {
       // For security, don't reveal if email exists - just say success
@@ -1522,10 +1551,10 @@ try {
 
     // Generate reset token
     $resetToken = bin2hex(random_bytes(32));
-    $hashedToken = hash_hmac('sha256', $resetToken, 'password_reset_secret', false);
+    $hashedToken = hash_hmac('sha256', $resetToken, getPasswordResetSecret($env), false);
     $tokenId = randomId('prt_', 16);
     $now = utcNowMs();
-    $expiresAt = date('Y-m-d H:i:s.u', (time() + (2 * 60 * 60)) * 1000); // 2 hours from now
+    $expiresAt = date('Y-m-d H:i:s.u', time() + (2 * 60 * 60)); // 2 hours from now
 
     // Invalidate old tokens for this user
     $invalidateStmt = $db->prepare('UPDATE password_reset_tokens SET is_used = 1 WHERE user_id = :user_id AND is_used = 0');
@@ -1605,7 +1634,7 @@ try {
     }
 
     // Hash the provided token to compare with stored hash
-    $hashedToken = hash_hmac('sha256', $resetToken, 'password_reset_secret', false);
+    $hashedToken = hash_hmac('sha256', $resetToken, getPasswordResetSecret($env), false);
     
     // Find the reset token
     $tokenStmt = $db->prepare(
