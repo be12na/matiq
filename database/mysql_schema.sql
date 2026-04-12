@@ -255,6 +255,22 @@ CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
     ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `oauth_tokens` (
+  `id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) NOT NULL,
+  `provider` VARCHAR(32) NOT NULL,
+  `access_token` TEXT,
+  `refresh_token` TEXT,
+  `expires_at` DATETIME(3) DEFAULT NULL,
+  `token_type` VARCHAR(32) DEFAULT 'Bearer',
+  `scope` VARCHAR(512) DEFAULT NULL,
+  `created_at` DATETIME(3) NOT NULL,
+  `updated_at` DATETIME(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_oauth_tokens_user_provider` (`user_id`, `provider`),
+  KEY `idx_oauth_tokens_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT INTO `thresholds` (`metric_key`, `enabled`, `rule_type`, `value`, `label`) VALUES
   ('roas', 1, 'min', 1.500000, 'ROAS min'),
   ('cpa', 0, 'max', 150000.000000, 'CPA max'),

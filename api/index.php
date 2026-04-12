@@ -131,6 +131,33 @@ function pdo(array $env): PDO {
   return $db;
 }
 
+function ensureOauthTables(PDO $db): void {
+  static $ensured = false;
+  if ($ensured) {
+    return;
+  }
+
+  $db->exec(
+    "CREATE TABLE IF NOT EXISTS oauth_tokens (
+      id VARCHAR(64) NOT NULL,
+      user_id VARCHAR(64) NOT NULL,
+      provider VARCHAR(32) NOT NULL,
+      access_token TEXT,
+      refresh_token TEXT,
+      expires_at DATETIME(3),
+      token_type VARCHAR(32) DEFAULT 'Bearer',
+      scope VARCHAR(512),
+      created_at DATETIME(3) NOT NULL,
+      updated_at DATETIME(3) NOT NULL,
+      PRIMARY KEY (id),
+      UNIQUE KEY idx_oauth_tokens_user_provider (user_id, provider),
+      KEY idx_oauth_tokens_expires (expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  );
+
+  $ensured = true;
+}
+
 function ensureNotificationTables(PDO $db): void {
   static $ensured = false;
   if ($ensured) {
@@ -1070,6 +1097,7 @@ try {
   $db = pdo($env);
   try {
     ensureNotificationTables($db);
+    ensureOauthTables($db);
   } catch (Throwable $e) {
     // Non-fatal: auth flow must remain available even when schema bootstrap fails.
   }
@@ -1590,29 +1618,239 @@ try {
     if ($returnTo === '' || $returnTo[0] !== '/') {
       $returnTo = '/';
     }
-    $sep = (strpos($returnTo, '?') === false) ? '?' : '&';
-    $target = $returnTo . $sep
-      . 'oauth_provider=openai'
-      . '&oauth_status=error'
-      . '&oauth_error=' . rawurlencode('OpenAI OAuth belum dikonfigurasi di mode PHP MySQL');
+
+    $clientId = envGet($env, 'OPENAI_OAUTH_CLIENT_ID', '');
+    $clientSecret = envGet($env, 'OPENAI_OAUTH_CLIENT_SECRET', '');
+    $redirectUri = rtrim(envGet($env, 'APP_URL', getDomain()), '/') . '/oauth/openai/callback';
+
+    if ($clientId === '' || $clientSecret === '') {
+      $sep = (strpos($returnTo, '?') === false) ? '?' : '&';
+      $target = $returnTo . $sep
+        . 'oauth_provider=openai'
+        . '&oauth_status=error'
+        . '&oauth_error=' . rawurlencode('OpenAI OAuth belum dikonfigurasi. Hubungi admin untuk setup.');
+      header('Location: ' . $target, true, 302);
+      exit;
+    }
+
+    $state = bin2hex(random_bytes(16));
+    $scope = 'model.read organization.read';
+
+    $authUrl = 'https://auth.openai.com/authorize?'
+      . 'response_type=code'
+      . '&client_id=' . rawurlencode($clientId)
+      . '&redirect_uri=' . rawurlencode($redirectUri)
+      . '&scope=' . rawurlencode($scope)
+      . '&state=' . $state;
+
+    $stateStmt = $db->prepare(
+      'INSERT INTO sessions (token_id, user_id, email, role, payment_status, created_at, expires_at, is_revoked)
+       VALUES (:token_id, :user_id, :email, :role, :payment_status, :created_at, :expires_at, 0)'
+    );
+    $now = utcNow();
+    $stateStmt->execute([
+      ':token_id' => 'oauth_state_' . $state,
+      ':user_id' => 'pending',
+      ':email' => '',
+      ':role' => 'user',
+      ':payment_status' => 'NONE',
+      ':created_at' => $now->format('Y-m-d H:i:s.v'),
+      ':expires_at' => $now->modify('+10 minutes')->format('Y-m-d H:i:s.v'),
+    ]);
+    $stateStmt = null;
+
+    header('Location: ' . $authUrl, true, 302);
+    exit;
+  }
+
+  if ($method === 'GET' && $uriPath === '/oauth/openai/callback') {
+    $code = trim((string)($_GET['code'] ?? ''));
+    $state = trim((string)($_GET['state'] ?? ''));
+    $error = trim((string)($_GET['error'] ?? ''));
+    $errorDesc = trim((string)($_GET['error_description'] ?? ''));
+
+    if ($error !== '') {
+      $sep = strpos($returnTo ?? '', '?') === false ? '?' : '&';
+      $target = ($_GET['return_to'] ?? '/') . $sep
+        . 'oauth_provider=openai'
+        . '&oauth_status=error'
+        . '&oauth_error=' . rawurlencode($errorDesc ?: $error);
+      header('Location: ' . $target, true, 302);
+      exit;
+    }
+
+    if ($state === '' || $code === '') {
+      $sep = strpos($_GET['return_to'] ?? '', '?') === false ? '?' : '&';
+      $target = ($_GET['return_to'] ?? '/') . $sep
+        . 'oauth_provider=openai'
+        . '&oauth_status=error'
+        . '&oauth_error=' . rawurlencode('Parameter tidak lengkap');
+      header('Location: ' . $target, true, 302);
+      exit;
+    }
+
+    $stateToken = 'oauth_state_' . $state;
+    $stateStmt = $db->prepare('SELECT * FROM sessions WHERE token_id = :token_id LIMIT 1');
+    $stateStmt->execute([':token_id' => $stateToken]);
+    $stateRow = $stateStmt->fetch();
+    $stateStmt = null;
+
+    if (!$stateRow) {
+      $sep = strpos($_GET['return_to'] ?? '', '?') === false ? '?' : '&';
+      $target = ($_GET['return_to'] ?? '/') . $sep
+        . 'oauth_provider=openai'
+        . '&oauth_status=error'
+        . '&oauth_error=' . rawurlencode('State token tidak valid atau sudah expired');
+      header('Location: ' . $target, true, 302);
+      exit;
+    }
+
+    $revokeStmt = $db->prepare('UPDATE sessions SET is_revoked = 1 WHERE token_id = :token_id');
+    $revokeStmt->execute([':token_id' => $stateToken]);
+    $revokeStmt = null;
+
+    $clientId = envGet($env, 'OPENAI_OAUTH_CLIENT_ID', '');
+    $clientSecret = envGet($env, 'OPENAI_OAUTH_CLIENT_SECRET', '');
+    $redirectUri = rtrim(envGet($env, 'APP_URL', getDomain()), '/') . '/oauth/openai/callback';
+
+    $tokenUrl = 'https://auth.openai.com/v1/oauth/token';
+    $tokenData = [
+      'grant_type' => 'authorization_code',
+      'client_id' => $clientId,
+      'client_secret' => $clientSecret,
+      'code' => $code,
+      'redirect_uri' => $redirectUri,
+    ];
+
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+      CURLOPT_URL => $tokenUrl,
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_POST => true,
+      CURLOPT_POSTFIELDS => http_build_query($tokenData),
+      CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+      CURLOPT_TIMEOUT_MS => 30000,
+    ]);
+    $tokenResponse = curl_exec($ch);
+    $tokenHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $tokenJson = json_decode($tokenResponse, true);
+
+    if ($tokenHttpCode < 200 || $tokenHttpCode >= 300 || !isset($tokenJson['access_token'])) {
+      $sep = strpos($_GET['return_to'] ?? '', '?') === false ? '?' : '&';
+      $target = ($_GET['return_to'] ?? '/') . $sep
+        . 'oauth_provider=openai'
+        . '&oauth_status=error'
+        . '&oauth_error=' . rawurlencode('Gagal mendapatkan access token: ' . ($tokenJson['error_description'] ?? 'Unknown error'));
+      header('Location: ' . $target, true, 302);
+      exit;
+    }
+
+    $returnTo = $_GET['return_to'] ?? '/';
+    $sep = strpos($returnTo, '?') === false ? '?' : '&';
+    $target = $returnTo . $sep . 'oauth_provider=openai&oauth_status=success';
     header('Location: ' . $target, true, 302);
     exit;
   }
 
   if ($method === 'GET' && ($uriPath === '/oauth/openai/status' || $uriPath === '/oauth/openai/verify')) {
-    $oauthUser = requireAuth($db, $payload);
+    $current = requireAuth($db, $payload);
+
+    $tokenStmt = $db->prepare(
+      'SELECT * FROM oauth_tokens WHERE user_id = :user_id AND provider = :provider AND expires_at > :now LIMIT 1'
+    );
+    $now = utcNow()->format('Y-m-d H:i:s.v');
+    $tokenStmt->execute([':user_id' => $current['id'], ':provider' => 'openai', ':now' => $now]);
+    $oauthToken = $tokenStmt->fetch();
+    $tokenStmt = null;
+
+    if (!$oauthToken) {
+      out([
+        'ok' => true,
+        'connected' => false,
+        'provider' => 'openai',
+        'mode' => 'php-mysql',
+        'message' => 'Belum ada token OAuth. Silakan login ulang.',
+        'user_id' => (string)($current['id'] ?? ''),
+      ]);
+      return;
+    }
+
+    $testUrl = 'https://api.openai.com/v1/models';
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+      CURLOPT_URL => $testUrl,
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $oauthToken['access_token']],
+      CURLOPT_TIMEOUT_MS => 10000,
+    ]);
+    $testResponse = curl_exec($ch);
+    $testHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $isValid = ($testHttpCode >= 200 && $testHttpCode < 300);
+
+    if (!$isValid && isset($oauthToken['refresh_token'])) {
+      $clientId = envGet($env, 'OPENAI_OAUTH_CLIENT_ID', '');
+      $clientSecret = envGet($env, 'OPENAI_OAUTH_CLIENT_SECRET', '');
+
+      $refreshUrl = 'https://auth.openai.com/v1/oauth/token';
+      $refreshData = [
+        'grant_type' => 'refresh_token',
+        'client_id' => $clientId,
+        'client_secret' => $clientSecret,
+        'refresh_token' => $oauthToken['refresh_token'],
+      ];
+
+      $ch = curl_init();
+      curl_setopt_array($ch, [
+        CURLOPT_URL => $refreshUrl,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($refreshData),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_TIMEOUT_MS => 30000,
+      ]);
+      $refreshResponse = curl_exec($ch);
+      curl_close($ch);
+
+      $refreshJson = json_decode($refreshResponse, true);
+
+      if (isset($refreshJson['access_token'])) {
+        $newExpiresAt = (new DateTimeImmutable('+1 hour', new DateTimeZone('UTC')))->format('Y-m-d H:i:s.v');
+        $updateStmt = $db->prepare(
+          'UPDATE oauth_tokens SET access_token = :access_token, expires_at = :expires_at, updated_at = :updated_at WHERE id = :id'
+        );
+        $updateStmt->execute([
+          ':access_token' => $refreshJson['access_token'],
+          ':expires_at' => $newExpiresAt,
+          ':updated_at' => utcNowMs(),
+          ':id' => $oauthToken['id'],
+        ]);
+        $updateStmt = null;
+        $isValid = true;
+      }
+    }
+
     out([
       'ok' => true,
-      'connected' => false,
+      'connected' => $isValid,
       'provider' => 'openai',
       'mode' => 'php-mysql',
-      'message' => 'OpenAI OAuth belum dikonfigurasi di mode ini',
-      'user_id' => (string)($oauthUser['id'] ?? ''),
+      'message' => $isValid ? 'Token valid' : 'Token expired atau invalid',
+      'user_id' => (string)($current['id'] ?? ''),
+      'expires_at' => $oauthToken['expires_at'] ?? null,
     ]);
   }
 
   if ($method === 'POST' && $uriPath === '/oauth/openai/logout') {
-    requireAuth($db, $payload);
+    $current = requireAuth($db, $payload);
+
+    $deleteStmt = $db->prepare('DELETE FROM oauth_tokens WHERE user_id = :user_id AND provider = :provider');
+    $deleteStmt->execute([':user_id' => $current['id'], ':provider' => 'openai']);
+    $deleteStmt = null;
+
     out([
       'ok' => true,
       'connected' => false,
