@@ -281,15 +281,11 @@ function loadAiAuth(){
   try{
     var raw=JSON.parse(localStorage.getItem(AIAUTHK)||"{}")||{};
     return {
-      openai:getAiProviderAuthState_(raw,"openai"),
-      gemini:getAiProviderAuthState_(raw,"gemini"),
-      claude:getAiProviderAuthState_(raw,"claude")
+      openai:getAiProviderAuthState_(raw,"openai")
     };
   }catch(e){
     return {
-      openai:defaultAiProviderAuth_(),
-      gemini:defaultAiProviderAuth_(),
-      claude:defaultAiProviderAuth_()
+      openai:defaultAiProviderAuth_()
     };
   }
 }
@@ -297,17 +293,13 @@ function loadAiAuth(){
 function saveAiAuth(auth){
   var a=auth||{};
   localStorage.setItem(AIAUTHK,JSON.stringify({
-    openai:getAiProviderAuthState_(a,"openai"),
-    gemini:getAiProviderAuthState_(a,"gemini"),
-    claude:getAiProviderAuthState_(a,"claude")
+    openai:getAiProviderAuthState_(a,"openai")
   }));
 }
 
 function providerLoginUrl_(provider){
   var p=String(provider||"").toLowerCase();
   if(p==="openai")return "https://platform.openai.com/login";
-  if(p==="gemini")return "https://aistudio.google.com/";
-  if(p==="claude")return "https://console.anthropic.com/";
   return "";
 }
 
@@ -2809,9 +2801,7 @@ function App(){
         h("div",{style:{marginBottom:10}},
           h("select",{value:aiCfg.provider||"builtin",onChange:function(e){var v=e.target.value;setAiCfg(function(c){var base=Object.assign({},c,{provider:v});if(v==="openai")base.useLegacyKey=false;return base;});}},
             h("option",{value:"builtin"},"Builtin (tanpa API key)"),
-            h("option",{value:"openai"},"OpenAI"),
-            h("option",{value:"gemini"},"Gemini"),
-            h("option",{value:"claude"},"Claude")
+            h("option",{value:"openai"},"OpenAI")
           )
         ),
         aiCfg.provider!=="builtin"&&h("div",null,
